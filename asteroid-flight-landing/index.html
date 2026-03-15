@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Asteroid Flight & Landing</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; cursor: crosshair; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+// ============================================================
+// CONSTANTS — all tunable values in one place
+// ============================================================
+const THRUST_POWER = 150;           // px/s² acceleration when thrusting
+const ROTATION_SPEED = 3.0;         // rad/s rotation rate
+const GRAVITY_CONSTANT = 4000;      // gravitational pull strength
+const GRAVITY_RANGE = 5.0;          // multiplier on asteroid radius for influence
+const MAX_GRAVITY_ACCEL = 80;       // cap on gravity acceleration px/s²
+const LANDING_SPEED = 55;           // max total velocity for safe landing px/s
+const LANDING_ANGLE = Math.PI / 6;  // 30° tolerance from surface normal
+const RESTITUTION = 0.3;            // bounce energy retention (0=stop, 1=elastic)
+const CRASH_SPEED = 160;            // above this → crash + respawn
+const CAMERA_LERP = 3.0;            // camera follow speed
+const SHIP_SIZE = 14;               // ship polygon scale in world units
+const SHIP_COLLISION_RADIUS = 10;   // ship hitbox radius
+const MAX_SPEED = 400;              // velocity cap px/s
+const PHYSICS_STEP = 1 / 60;        // fixed physics timestep (60Hz)
+const STAR_COUNT = 500;             // background stars
+const CRASH_RESPAWN_TIME = 2.0;     // seconds before respawn after crash
+const LAUNCH_IMPULSE = 80;          // velocity when launching off surface
+
+// ============================================================
+// CANVAS SETUP
+// ============================================================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ============================================================
+// UTILITY
+// ============================================================
+function rand(min, max) { return Math.random() * (max - min) + min; }
+function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
+function dist(ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+// ============================================================
+// GAME STATE
+// ============================================================
+const state = {
+  ship: {
+    x: 0, y: 0,
+    vx: 0, vy: 0,
+    angle: 0,               // 0 = pointing up (negative Y)
+    status: 'landed',        // 'flying' | 'landed' | 'crashed'
+    landedOn: null,          // asteroid/moon object
+    landedAngle: 0,          // angular position on asteroid surface
+    crashTimer: 0,
+    thrustOn: false,
+  },
+  moon: { x: 0, y: 550, radius: 200, mass: 200, vertices: [], craters: [], isBase: true, maria: [] },
+  asteroids: [],
+  stars: [],
+  nebulae: [],
+  particles: [],
+  landingRings: [],
+  camera: { x: 0, y: 0 },
+  keys: { left: false, right: false, thrust: false },
+  screenShake: 0,
+  time: 0,
+  controlsHintAlpha: 1.0,
+};
+
+// Expose for Playwright testing
+window.gameState = state;
+
+// ============================================================
+// INITIALIZATION
+// ============================================================
+function generateAsteroidVertices(radius, count) {
+  const verts = [];
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2;
+    const r = radius * rand(0.82, 1.18);
+    verts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+  }
+  return verts;
+}
+
+function generateCraters(radius) {
+  const craters = [];
+  const count = randInt(3, 6);
+  for (let i = 0; i < count; i++) {
+    const a = rand(0, Math.PI * 2);
+    const d = rand(0.15, 0.65) * radius;
+    craters.push({
+      x: Math.cos(a) * d,
+      y: Math.sin(a) * d,
+      r: rand(0.06, 0.18) * radius,
+    });
+  }
+  return craters;
+}
+
+function generateMoonVertices(radius, count) {
+  // Nearly perfect circle — very minimal jitter for smooth cartoon look
+  const verts = [];
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2;
+    const r = radius * rand(0.985, 1.015);
+    verts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+  }
+  return verts;
+}
+
+function init() {
+  const s = state;
+
+  // Moon base — large circular body at bottom of world
+  s.moon.vertices = generateMoonVertices(s.moon.radius, 28);
+  s.moon.craters = [];
+  const moonCraterCount = randInt(8, 12);
+  for (let i = 0; i < moonCraterCount; i++) {
+    const a = rand(0, Math.PI * 2);
+    const d = rand(0.15, 0.7) * s.moon.radius;
+    s.moon.craters.push({
+      x: Math.cos(a) * d,
+      y: Math.sin(a) * d,
+      r: rand(0.04, 0.12) * s.moon.radius,
+    });
+  }
+  // Lunar maria — large dark patches
+  s.moon.maria = [
+    { x: -40, y: -30, rx: 55, ry: 40, angle: 0.3 },
+    { x: 30,  y: 50,  rx: 45, ry: 35, angle: -0.5 },
+    { x: -20, y: 60,  rx: 35, ry: 50, angle: 0.8 },
+  ];
+
+  // Asteroid placement — tighter layout, closer to moon
+  // Moon top is at y=200, asteroids spread upward from there
+  const asteroidDefs = [
+    { x: -120, y: 50,   r: 55 },   // close, easy first target
+    { x: 200,  y: -50,  r: 75 },   // nearby, medium
+    { x: -300, y: -180, r: 45 },   // medium distance, small
+    { x: 100,  y: -300, r: 90 },   // medium distance, large
+    { x: 380,  y: -120, r: 42 },   // medium distance, small
+    { x: -80,  y: -500, r: 80 },   // far, large
+    { x: 320,  y: -450, r: 60 },   // far
+    { x: -320, y: -380, r: 65 },   // far
+  ];
+
+  s.asteroids = asteroidDefs.map((def, i) => ({
+    x: def.x,
+    y: def.y,
+    radius: def.r,
+    mass: def.r,
+    vertices: generateAsteroidVertices(def.r, randInt(14, 20)),
+    craters: generateCraters(def.r),
+    id: i,
+  }));
+
+  // Multi-layer star field — tighter bounds for smaller world
+  s.stars = [];
+  for (let i = 0; i < STAR_COUNT; i++) {
+    s.stars.push({
+      x: rand(-1500, 1500),
+      y: rand(-1000, 1400),
+      size: Math.random() < 0.03 ? 3 : Math.random() < 0.15 ? 2 : 1,
+      twinkleOffset: rand(0, Math.PI * 2),
+      twinkleSpeed: rand(1.5, 4),
+      color: Math.random() < 0.08 ? '#aaccff'
+           : Math.random() < 0.05 ? '#ffccaa'
+           : '#ffffff',
+    });
+  }
+
+  // Distant nebula clouds — closer positions
+  s.nebulae = [
+    { x: -350, y: -150, r: 400, color1: 'rgba(80, 20, 120, 0.05)', color2: 'rgba(80, 20, 120, 0)' },
+    { x: 250,  y: -350, r: 350, color1: 'rgba(20, 80, 110, 0.04)', color2: 'rgba(20, 80, 110, 0)' },
+    { x: -50,  y: 200,  r: 300, color1: 'rgba(110, 20, 60, 0.04)', color2: 'rgba(110, 20, 60, 0)' },
+  ];
+
+  // Ship starts landed on top of moon
+  s.ship.x = s.moon.x;
+  s.ship.y = s.moon.y - s.moon.radius - SHIP_COLLISION_RADIUS;
+  s.ship.status = 'landed';
+  s.ship.landedOn = s.moon;
+  s.ship.landedAngle = -Math.PI / 2; // top of circle
+  s.ship.angle = 0;
+  s.ship.vx = 0;
+  s.ship.vy = 0;
+
+  // Camera starts at ship
+  s.camera.x = s.ship.x;
+  s.camera.y = s.ship.y;
+}
+
+// ============================================================
+// INPUT
+// ============================================================
+const keyMap = {
+  'ArrowLeft': 'left',  'KeyA': 'left',
+  'ArrowRight': 'right', 'KeyD': 'right',
+  'ArrowUp': 'thrust',  'KeyW': 'thrust',
+};
+
+window.addEventListener('keydown', (e) => {
+  const action = keyMap[e.code];
+  if (action) {
+    state.keys[action] = true;
+    e.preventDefault();
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  const action = keyMap[e.code];
+  if (action) {
+    state.keys[action] = false;
+    e.preventDefault();
+  }
+});
+
+window.addEventListener('blur', () => {
+  state.keys.left = false;
+  state.keys.right = false;
+  state.keys.thrust = false;
+});
+
+// ============================================================
+// PARTICLES
+// ============================================================
+function spawnExhaust(ship) {
+  const backX = ship.x - Math.sin(ship.angle) * SHIP_SIZE * 0.8;
+  const backY = ship.y + Math.cos(ship.angle) * SHIP_SIZE * 0.8;
+
+  for (let i = 0; i < 3; i++) {
+    const spread = rand(-0.5, 0.5);
+    const speed = rand(50, 120);
+    state.particles.push({
+      x: backX + rand(-3, 3),
+      y: backY + rand(-3, 3),
+      vx: -Math.sin(ship.angle) * speed + Math.cos(ship.angle) * spread * 30 + ship.vx * 0.3,
+      vy: Math.cos(ship.angle) * speed - Math.sin(ship.angle) * spread * 30 + ship.vy * 0.3,
+      life: rand(0.2, 0.5),
+      maxLife: 0.5,
+      size: rand(2, 5),
+      type: 'exhaust',
+    });
+  }
+}
+
+function spawnCrashParticles(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    const a = rand(0, Math.PI * 2);
+    const speed = rand(60, 280);
+    state.particles.push({
+      x, y,
+      vx: Math.cos(a) * speed,
+      vy: Math.sin(a) * speed,
+      life: rand(0.3, 0.9),
+      maxLife: 0.9,
+      size: rand(1, 4),
+      type: 'spark',
+    });
+  }
+}
+
+function spawnLandingRing(x, y) {
+  state.landingRings.push({
+    x, y,
+    radius: 5,
+    maxRadius: 60,
+    alpha: 0.8,
+    life: 0.6,
+    maxLife: 0.6,
+  });
+}
+
+function updateParticles(dt) {
+  for (let i = state.particles.length - 1; i >= 0; i--) {
+    const p = state.particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt;
+    if (p.life <= 0) state.particles.splice(i, 1);
+  }
+  for (let i = state.landingRings.length - 1; i >= 0; i--) {
+    const r = state.landingRings[i];
+    r.life -= dt;
+    r.radius = lerp(5, r.maxRadius, 1 - r.life / r.maxLife);
+    r.alpha = (r.life / r.maxLife) * 0.8;
+    if (r.life <= 0) state.landingRings.splice(i, 1);
+  }
+}
+
+// ============================================================
+// PHYSICS UPDATE
+// ============================================================
+function update(dt) {
+  const s = state;
+  const ship = s.ship;
+  s.time += dt;
+
+  // Fade controls hint after 8 seconds
+  if (s.time > 8) {
+    s.controlsHintAlpha = Math.max(0, s.controlsHintAlpha - dt * 0.5);
+  }
+
+  // --- FLYING STATE ---
+  if (ship.status === 'flying') {
+    // Rotation
+    if (s.keys.left)  ship.angle -= ROTATION_SPEED * dt;
+    if (s.keys.right) ship.angle += ROTATION_SPEED * dt;
+
+    // Thrust
+    ship.thrustOn = s.keys.thrust;
+    if (s.keys.thrust) {
+      ship.vx += Math.sin(ship.angle) * THRUST_POWER * dt;
+      ship.vy -= Math.cos(ship.angle) * THRUST_POWER * dt;
+      spawnExhaust(ship);
+    }
+
+    // Gravity from each body (asteroids + moon)
+    const allBodies = [...s.asteroids, s.moon];
+    for (const ast of allBodies) {
+      const dx = ast.x - ship.x;
+      const dy = ast.y - ship.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const range = ast.radius * GRAVITY_RANGE;
+
+      if (d < range && d > 1) {
+        let accel = GRAVITY_CONSTANT * ast.mass / (d * d);
+        accel = Math.min(accel, MAX_GRAVITY_ACCEL);
+        ship.vx += (dx / d) * accel * dt;
+        ship.vy += (dy / d) * accel * dt;
+      }
+    }
+
+    // Velocity cap
+    const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+    if (speed > MAX_SPEED) {
+      ship.vx = (ship.vx / speed) * MAX_SPEED;
+      ship.vy = (ship.vy / speed) * MAX_SPEED;
+    }
+
+    // Integrate position
+    ship.x += ship.vx * dt;
+    ship.y += ship.vy * dt;
+
+    // --- Collision: all bodies (asteroids + moon) ---
+    for (const ast of allBodies) {
+      const dx = ship.x - ast.x;
+      const dy = ship.y - ast.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const minDist = ast.radius + SHIP_COLLISION_RADIUS;
+
+      if (d < minDist && d > 0.01) {
+        // Surface normal (outward from asteroid center)
+        const nx = dx / d;
+        const ny = dy / d;
+
+        // Push ship to surface
+        ship.x = ast.x + nx * minDist;
+        ship.y = ast.y + ny * minDist;
+
+        // Full speed for landing check
+        const totalSpeed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+
+        // Ship "up" vector: (sin(angle), -cos(angle))
+        const upX = Math.sin(ship.angle);
+        const upY = -Math.cos(ship.angle);
+        const dotUp = upX * nx + upY * ny;
+        const angleFromNormal = Math.acos(clamp(dotUp, -1, 1));
+
+        if (totalSpeed < LANDING_SPEED && angleFromNormal < LANDING_ANGLE) {
+          // --- Successful landing ---
+          ship.status = 'landed';
+          ship.landedOn = ast;
+          ship.landedAngle = Math.atan2(dy, dx);
+          ship.vx = 0;
+          ship.vy = 0;
+          spawnLandingRing(ship.x, ship.y);
+        } else if (totalSpeed > CRASH_SPEED) {
+          // --- Crash ---
+          ship.status = 'crashed';
+          ship.crashTimer = CRASH_RESPAWN_TIME;
+          ship.vx = 0;
+          ship.vy = 0;
+          spawnCrashParticles(ship.x, ship.y, 30);
+          s.screenShake = 15;
+        } else {
+          // --- Bounce ---
+          const velDotN = ship.vx * nx + ship.vy * ny;
+          if (velDotN < 0) {
+            // Reflect normal component with restitution
+            ship.vx -= (1 + RESTITUTION) * velDotN * nx;
+            ship.vy -= (1 + RESTITUTION) * velDotN * ny;
+          }
+          spawnCrashParticles(ship.x, ship.y, 8);
+          s.screenShake = clamp(totalSpeed / 15, 2, 8);
+        }
+      }
+    }
+
+  // --- LANDED STATE ---
+  } else if (ship.status === 'landed') {
+    ship.thrustOn = false;
+
+    if (s.keys.thrust) {
+      // Launch away from surface
+      ship.status = 'flying';
+      ship.thrustOn = true;
+
+      const nx = Math.cos(ship.landedAngle);
+      const ny = Math.sin(ship.landedAngle);
+      ship.vx = nx * LAUNCH_IMPULSE;
+      ship.vy = ny * LAUNCH_IMPULSE;
+      ship.x += nx * 5;
+      ship.y += ny * 5;
+      ship.landedOn = null;
+      spawnExhaust(ship);
+
+    } else if (ship.landedOn) {
+      // Stick to surface
+      const ast = ship.landedOn;
+      const la = ship.landedAngle;
+      ship.x = ast.x + Math.cos(la) * (ast.radius + SHIP_COLLISION_RADIUS);
+      ship.y = ast.y + Math.sin(la) * (ast.radius + SHIP_COLLISION_RADIUS);
+      // Orient ship: "up" vector aligns with outward surface normal
+      ship.angle = Math.atan2(Math.cos(la), -Math.sin(la));
+    }
+
+  // --- CRASHED STATE ---
+  } else if (ship.status === 'crashed') {
+    ship.thrustOn = false;
+    ship.crashTimer -= dt;
+    if (ship.crashTimer <= 0) {
+      // Respawn on moon
+      ship.status = 'landed';
+      ship.landedOn = s.moon;
+      ship.landedAngle = -Math.PI / 2;
+      ship.x = s.moon.x;
+      ship.y = s.moon.y - s.moon.radius - SHIP_COLLISION_RADIUS;
+      ship.angle = 0;
+      ship.vx = 0;
+      ship.vy = 0;
+    }
+  }
+
+  // Update effects
+  updateParticles(dt);
+
+  // Camera lerp toward ship
+  s.camera.x = lerp(s.camera.x, ship.x, CAMERA_LERP * dt);
+  s.camera.y = lerp(s.camera.y, ship.y, CAMERA_LERP * dt);
+
+  // Screen shake decay
+  if (s.screenShake > 0) {
+    s.screenShake *= Math.pow(0.05, dt);
+    if (s.screenShake < 0.1) s.screenShake = 0;
+  }
+}
+
+// ============================================================
+// RENDERING
+// ============================================================
+
+function drawBackground() {
+  const grad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
+  grad.addColorStop(0, '#0a0520');
+  grad.addColorStop(1, '#05051a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawNebulae() {
+  for (const n of state.nebulae) {
+    const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+    grad.addColorStop(0, n.color1);
+    grad.addColorStop(1, n.color2);
+    ctx.fillStyle = grad;
+    ctx.fillRect(n.x - n.r, n.y - n.r, n.r * 2, n.r * 2);
+  }
+}
+
+function drawStars() {
+  for (const star of state.stars) {
+    let alpha = 0.7;
+    if (star.size >= 2) {
+      alpha = 0.4 + 0.6 * Math.sin(state.time * star.twinkleSpeed + star.twinkleOffset);
+    }
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = star.color;
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.size * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Glow halo for bright stars
+    if (star.size === 3) {
+      ctx.globalAlpha = alpha * 0.15;
+      ctx.beginPath();
+      ctx.arc(star.x, star.y, star.size * 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawAsteroid(ast) {
+  ctx.save();
+  ctx.translate(ast.x, ast.y);
+
+  // Atmospheric glow
+  ctx.shadowColor = '#3a2a10';
+  ctx.shadowBlur = 15;
+
+  // Gradient fill
+  const grad = ctx.createRadialGradient(
+    -ast.radius * 0.25, -ast.radius * 0.25, ast.radius * 0.1,
+    0, 0, ast.radius
+  );
+  grad.addColorStop(0, '#5a4b3a');
+  grad.addColorStop(0.6, '#3a2b1a');
+  grad.addColorStop(1, '#2a1f15');
+
+  // Draw jagged body
+  ctx.beginPath();
+  ctx.moveTo(ast.vertices[0].x, ast.vertices[0].y);
+  for (let i = 1; i < ast.vertices.length; i++) {
+    ctx.lineTo(ast.vertices[i].x, ast.vertices[i].y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+
+  // Outline
+  ctx.strokeStyle = '#6a5a4a';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Craters
+  for (const c of ast.craters) {
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(15, 10, 5, 0.5)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(80, 60, 40, 0.25)';
+    ctx.lineWidth = 0.7;
+    ctx.stroke();
+  }
+
+  // Rim lighting (top-left highlight)
+  ctx.beginPath();
+  ctx.arc(0, 0, ast.radius * 0.88, -Math.PI * 0.85, -Math.PI * 0.15);
+  ctx.strokeStyle = 'rgba(160, 140, 110, 0.12)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawMoon() {
+  const moon = state.moon;
+
+  ctx.save();
+  ctx.translate(moon.x, moon.y);
+
+  // --- Cartoon moon body (bright white/light gray, like reference) ---
+
+  // Soft white glow halo
+  ctx.shadowColor = 'rgba(200, 210, 220, 0.4)';
+  ctx.shadowBlur = 30;
+
+  // Bright base gradient — light on left, slightly darker on right
+  const baseGrad = ctx.createRadialGradient(
+    -moon.radius * 0.3, -moon.radius * 0.2, moon.radius * 0.05,
+    moon.radius * 0.1, moon.radius * 0.05, moon.radius
+  );
+  baseGrad.addColorStop(0, '#f0ede8');  // near-white highlight
+  baseGrad.addColorStop(0.3, '#e0ddd5'); // very light gray
+  baseGrad.addColorStop(0.7, '#c8c4ba'); // light gray
+  baseGrad.addColorStop(1, '#a8a498');   // medium gray at edge
+
+  // Draw smooth body
+  ctx.beginPath();
+  ctx.moveTo(moon.vertices[0].x, moon.vertices[0].y);
+  for (let i = 1; i < moon.vertices.length; i++) {
+    ctx.lineTo(moon.vertices[i].x, moon.vertices[i].y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = baseGrad;
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+
+  // Subtle outline
+  ctx.strokeStyle = 'rgba(150, 145, 135, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // --- Dark crescent shadow on the right side ---
+  // Clip to moon shape, then draw a large dark gradient offset to the right
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, moon.radius * 0.99, 0, Math.PI * 2);
+  ctx.clip();
+
+  const shadowGrad = ctx.createRadialGradient(
+    -moon.radius * 0.5, -moon.radius * 0.1, moon.radius * 0.3,
+    moon.radius * 0.3, moon.radius * 0.1, moon.radius * 1.2
+  );
+  shadowGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  shadowGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0)');
+  shadowGrad.addColorStop(0.75, 'rgba(60, 65, 70, 0.25)');
+  shadowGrad.addColorStop(1, 'rgba(50, 55, 60, 0.5)');
+  ctx.fillStyle = shadowGrad;
+  ctx.fillRect(-moon.radius, -moon.radius, moon.radius * 2, moon.radius * 2);
+
+  ctx.restore();
+
+  // --- Craters (cartoon style — subtle gray ovals) ---
+  for (const c of moon.craters) {
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+    // Darker fill
+    ctx.fillStyle = 'rgba(140, 138, 130, 0.45)';
+    ctx.fill();
+    // Lighter inner highlight (top-left of crater)
+    ctx.beginPath();
+    ctx.arc(c.x - c.r * 0.15, c.y - c.r * 0.15, c.r * 0.7, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(180, 175, 168, 0.25)';
+    ctx.fill();
+    // Subtle dark rim on bottom-right
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(100, 98, 90, 0.2)';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+  }
+
+  // --- Launch pad structure at the top ---
+
+  const padY = -moon.radius - 1;  // sits right on the surface
+  const padW = 54;
+  const padH = 7;
+
+  // Support struts — angled lines from pad edges to moon surface
+  ctx.strokeStyle = '#2a2e32';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-padW / 2, padY + padH);
+  ctx.lineTo(-padW / 2 + 8, padY + padH + 14);
+  ctx.moveTo(padW / 2, padY + padH);
+  ctx.lineTo(padW / 2 - 8, padY + padH + 14);
+  ctx.stroke();
+
+  // Platform body
+  ctx.fillStyle = '#333840';
+  ctx.fillRect(-padW / 2, padY, padW, padH);
+
+  // Teal border
+  ctx.strokeStyle = '#00cc88';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(-padW / 2, padY, padW, padH);
+
+  // Warning stripes — alternating dashes along top edge
+  ctx.save();
+  ctx.setLineDash([5, 5]);
+  ctx.strokeStyle = 'rgba(0, 204, 136, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-padW / 2 + 2, padY + 1);
+  ctx.lineTo(padW / 2 - 2, padY + 1);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // "H" marking on pad surface
+  ctx.strokeStyle = 'rgba(0, 204, 136, 0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-6, padY + 1.5); ctx.lineTo(-6, padY + padH - 1.5);
+  ctx.moveTo(6, padY + 1.5);  ctx.lineTo(6, padY + padH - 1.5);
+  ctx.moveTo(-6, padY + padH / 2); ctx.lineTo(6, padY + padH / 2);
+  ctx.stroke();
+
+  // Landing lights — pad corners and center
+  const lightXs = [-padW / 2 + 2, -padW / 4, 0, padW / 4, padW / 2 - 2];
+  for (let i = 0; i < lightXs.length; i++) {
+    const pulse = 0.3 + 0.7 * Math.abs(Math.sin(state.time * 2.5 + i * 0.8));
+    ctx.beginPath();
+    ctx.arc(lightXs[i], padY - 1, 3, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0, 255, 150, ${pulse})`;
+    ctx.shadowColor = '#00ff96';
+    ctx.shadowBlur = 8 * pulse;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Center beacon — brighter, larger glow, visible from distance
+  const beaconPulse = 0.5 + 0.5 * Math.sin(state.time * 3);
+  ctx.beginPath();
+  ctx.arc(0, padY - 4, 4, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(0, 255, 180, ${beaconPulse})`;
+  ctx.shadowColor = '#00ffaa';
+  ctx.shadowBlur = 18 * beaconPulse;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
+function drawShip() {
+  const ship = state.ship;
+
+  // Crashed ship blinks
+  if (ship.status === 'crashed') {
+    if (Math.floor(state.time * 8) % 2 === 0) return;
+  }
+
+  ctx.save();
+  ctx.translate(ship.x, ship.y);
+  ctx.rotate(ship.angle);
+
+  // Engine flame when thrusting
+  if (ship.thrustOn && ship.status === 'flying') {
+    const flicker = rand(0.7, 1.3);
+    const flicker2 = rand(0.8, 1.2);
+
+    // Engine glow
+    ctx.shadowColor = '#ff6600';
+    ctx.shadowBlur = 25;
+
+    // Outer flame
+    ctx.beginPath();
+    ctx.moveTo(-6, SHIP_SIZE * 0.4);
+    ctx.lineTo(rand(-1.5, 1.5), SHIP_SIZE * 0.4 + 22 * flicker);
+    ctx.lineTo(6, SHIP_SIZE * 0.4);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255, 68, 0, 0.9)';
+    ctx.fill();
+
+    // Mid flame
+    ctx.beginPath();
+    ctx.moveTo(-4, SHIP_SIZE * 0.4);
+    ctx.lineTo(rand(-1, 1), SHIP_SIZE * 0.4 + 15 * flicker2);
+    ctx.lineTo(4, SHIP_SIZE * 0.4);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255, 200, 0, 0.9)';
+    ctx.fill();
+
+    // Core
+    ctx.beginPath();
+    ctx.moveTo(-2, SHIP_SIZE * 0.4);
+    ctx.lineTo(0, SHIP_SIZE * 0.4 + 8 * flicker);
+    ctx.lineTo(2, SHIP_SIZE * 0.4);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+  }
+
+  // Ship hull — 5-point polygon with notched tail
+  const s = SHIP_SIZE;
+  ctx.beginPath();
+  ctx.moveTo(0, -s);              // nose
+  ctx.lineTo(s * 0.6, s * 0.5);  // right wing tip
+  ctx.lineTo(s * 0.2, s * 0.25); // right notch
+  ctx.lineTo(-s * 0.2, s * 0.25);// left notch
+  ctx.lineTo(-s * 0.6, s * 0.5); // left wing tip
+  ctx.closePath();
+
+  // Gradient hull fill
+  const hullGrad = ctx.createLinearGradient(0, -s, 0, s * 0.5);
+  hullGrad.addColorStop(0, '#00e5ff');
+  hullGrad.addColorStop(1, '#0055aa');
+  ctx.fillStyle = hullGrad;
+  ctx.fill();
+
+  // Neon glow outline
+  const glowAmount = ship.status === 'landed'
+    ? 5 + 3 * Math.sin(state.time * 2)
+    : 8;
+  ctx.shadowColor = '#00e5ff';
+  ctx.shadowBlur = glowAmount;
+  ctx.strokeStyle = '#00e5ff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Cockpit dot
+  ctx.beginPath();
+  ctx.arc(0, -s * 0.45, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#aaffff';
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawParticles() {
+  if (state.particles.length === 0) return;
+
+  const prevComposite = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'lighter';
+
+  for (const p of state.particles) {
+    const lifeRatio = clamp(p.life / p.maxLife, 0, 1);
+    const size = p.size * lifeRatio;
+
+    if (p.type === 'exhaust') {
+      const r = 255;
+      const g = lifeRatio > 0.6 ? 255 : lifeRatio > 0.3 ? 180 : 80;
+      const b = lifeRatio > 0.6 ? 200 : lifeRatio > 0.3 ? 50 : 20;
+      ctx.globalAlpha = lifeRatio * 0.7;
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+    } else {
+      ctx.globalAlpha = lifeRatio * 0.9;
+      ctx.fillStyle = lifeRatio > 0.5 ? '#ffffff' : '#ffcc44';
+    }
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(0.5, size), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = prevComposite;
+}
+
+function drawLandingRings() {
+  for (const r of state.landingRings) {
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(0, 255, 100, ${r.alpha})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+function drawGravityWells() {
+  const ship = state.ship;
+  if (ship.status !== 'flying') return;
+
+  for (const ast of [...state.asteroids, state.moon]) {
+    const d = dist(ship.x, ship.y, ast.x, ast.y);
+    const range = ast.radius * GRAVITY_RANGE;
+
+    if (d < range) {
+      const proximity = 1 - d / range;
+
+      // Compute landing feasibility for color
+      const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+      const dx = ship.x - ast.x;
+      const dy = ship.y - ast.y;
+      const dd = Math.sqrt(dx * dx + dy * dy);
+
+      if (dd < 0.01) continue;
+
+      const nx = dx / dd, ny = dy / dd;
+      const upX = Math.sin(ship.angle), upY = -Math.cos(ship.angle);
+      const dotUp = upX * nx + upY * ny;
+      const angleOff = Math.acos(clamp(dotUp, -1, 1));
+
+      let color;
+      if (speed < LANDING_SPEED && angleOff < LANDING_ANGLE) {
+        color = '0, 255, 100';   // green — safe
+      } else if (speed < LANDING_SPEED * 2 && angleOff < LANDING_ANGLE * 2) {
+        color = '255, 200, 0';   // yellow — marginal
+      } else {
+        color = '255, 60, 60';   // red — dangerous
+      }
+
+      // Concentric dashed rings
+      ctx.save();
+      ctx.setLineDash([6, 10]);
+      for (let i = 1; i <= 3; i++) {
+        const ringR = ast.radius + (range - ast.radius) * (i / 3);
+        const ringAlpha = proximity * 0.12 * (4 - i) / 3;
+        ctx.beginPath();
+        ctx.arc(ast.x, ast.y, ringR, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${color}, ${ringAlpha})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
+}
+
+function drawVelocityIndicator() {
+  const ship = state.ship;
+  if (ship.status !== 'flying') return;
+
+  const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+  if (speed < 2) return;
+
+  const len = clamp(speed * 0.4, 5, 50);
+  const ex = ship.x + (ship.vx / speed) * len;
+  const ey = ship.y + (ship.vy / speed) * len;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(ship.x, ship.y);
+  ctx.lineTo(ex, ey);
+  ctx.strokeStyle = 'rgba(0, 229, 255, 0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = '#00e5ff';
+  ctx.shadowBlur = 4;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawHUD() {
+  const ship = state.ship;
+  const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+
+  ctx.save();
+  ctx.font = '13px monospace';
+
+  // --- Status panel (top-left) ---
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  roundRect(ctx, 10, 10, 200, 55, 6);
+  ctx.fill();
+
+  ctx.shadowColor = '#88aacc';
+  ctx.shadowBlur = 2;
+  ctx.fillStyle = '#ccddee';
+
+  let statusText = ship.status.toUpperCase();
+  let statusColor = '#ccddee';
+  if (ship.status === 'landed') {
+    statusText = ship.landedOn?.isBase ? 'LANDED — MOON BASE' : 'LANDED — ASTEROID';
+    statusColor = '#66ffaa';
+  } else if (ship.status === 'crashed') {
+    statusText = `CRASHED (${Math.max(0, ship.crashTimer).toFixed(1)}s)`;
+    statusColor = '#ff6666';
+  } else {
+    statusColor = '#88ccff';
+  }
+
+  ctx.fillStyle = statusColor;
+  ctx.fillText(statusText, 22, 33);
+  ctx.fillStyle = '#99aabb';
+  ctx.fillText(`VEL: ${speed.toFixed(0)} px/s`, 22, 52);
+  ctx.shadowBlur = 0;
+
+  // --- Controls hint (bottom-center, fades) ---
+  if (state.controlsHintAlpha > 0.01) {
+    ctx.globalAlpha = state.controlsHintAlpha;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    const hintW = 300;
+    roundRect(ctx, W / 2 - hintW / 2, H - 55, hintW, 38, 6);
+    ctx.fill();
+
+    ctx.fillStyle = '#88aacc';
+    ctx.font = '13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Arrow Keys / WASD  —  Rotate & Thrust', W / 2, H - 30);
+    ctx.textAlign = 'left';
+    ctx.globalAlpha = 1;
+  }
+
+  // --- Minimap (bottom-right) ---
+  drawMinimap();
+
+  ctx.restore();
+}
+
+function drawMinimap() {
+  const mapR = 65;
+  const mapX = W - mapR - 18;
+  const mapY = H - mapR - 18;
+  const mapScale = 0.06;
+
+  ctx.save();
+
+  // Background circle
+  ctx.beginPath();
+  ctx.arc(mapX, mapY, mapR, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(5, 5, 20, 0.6)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0, 229, 255, 0.2)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Clip to circle
+  ctx.beginPath();
+  ctx.arc(mapX, mapY, mapR - 2, 0, Math.PI * 2);
+  ctx.clip();
+
+  // Asteroids
+  for (const ast of state.asteroids) {
+    const ax = mapX + (ast.x - state.ship.x) * mapScale;
+    const ay = mapY + (ast.y - state.ship.y) * mapScale;
+    const ar = Math.max(2, ast.radius * mapScale);
+
+    // Only draw if in minimap bounds
+    if (Math.abs(ax - mapX) < mapR + ar && Math.abs(ay - mapY) < mapR + ar) {
+      ctx.beginPath();
+      ctx.arc(ax, ay, ar, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(100, 80, 60, 0.7)';
+      ctx.fill();
+    }
+  }
+
+  // Moon
+  const mx = mapX + (state.moon.x - state.ship.x) * mapScale;
+  const my = mapY + (state.moon.y - state.ship.y) * mapScale;
+  const mr = Math.max(4, state.moon.radius * mapScale);
+  if (Math.abs(mx - mapX) < mapR + mr && Math.abs(my - mapY) < mapR + mr) {
+    ctx.beginPath();
+    ctx.arc(mx, my, mr, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(60, 50, 40, 0.7)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 204, 136, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Ship (always at center)
+  ctx.beginPath();
+  ctx.arc(mapX, mapY, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#00e5ff';
+  ctx.shadowColor = '#00e5ff';
+  ctx.shadowBlur = 4;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+// ============================================================
+// MAIN RENDER
+// ============================================================
+function render() {
+  drawBackground();
+
+  ctx.save();
+
+  // Camera transform: center viewport on camera position
+  ctx.translate(W / 2, H / 2);
+
+  // Screen shake offset
+  if (state.screenShake > 0) {
+    ctx.translate(
+      rand(-state.screenShake, state.screenShake),
+      rand(-state.screenShake, state.screenShake)
+    );
+  }
+
+  ctx.translate(-state.camera.x, -state.camera.y);
+
+  // --- World-space rendering ---
+  drawNebulae();
+  drawStars();
+  drawGravityWells();
+
+  for (const ast of state.asteroids) {
+    drawAsteroid(ast);
+  }
+
+  drawMoon();
+  drawLandingRings();
+  drawVelocityIndicator();
+  drawParticles();
+  drawShip();
+
+  ctx.restore();
+
+  // --- Screen-space HUD ---
+  drawHUD();
+}
+
+// ============================================================
+// GAME LOOP — fixed timestep accumulator
+// ============================================================
+let lastTimestamp = 0;
+let accumulator = 0;
+
+function loop(timestamp) {
+  if (lastTimestamp === 0) lastTimestamp = timestamp;
+
+  const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.05);
+  lastTimestamp = timestamp;
+
+  accumulator += dt;
+  while (accumulator >= PHYSICS_STEP) {
+    update(PHYSICS_STEP);
+    accumulator -= PHYSICS_STEP;
+  }
+
+  render();
+  requestAnimationFrame(loop);
+}
+
+// ============================================================
+// START
+// ============================================================
+init();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

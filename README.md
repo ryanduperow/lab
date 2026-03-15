@@ -8,3 +8,4 @@ Inspired by Simon Willison's [hoard things you know how to do](https://simonwill
 
 | Experiment | What it proves | Tags |
 |---|---|---|
+| [asteroid-flight-landing](asteroid-flight-landing/) | Thrust-based 2D flight, gravity wells, and landing mechanics in a single HTML file | `canvas`, `physics`, `game-loop`, `collision` |
