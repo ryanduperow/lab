@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Supabase Auth + RLS Work Together</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #0f1117;
+    color: #e2e2e2;
+    min-height: 100vh;
+  }
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+  }
+  h1 {
+    font-size: 1.6rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #fff;
+  }
+  .subtitle {
+    color: #888;
+    margin-bottom: 2rem;
+    font-size: 0.95rem;
+  }
+
+  /* Concept selector */
+  .concepts {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+  }
+  .concept-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid #2a2d35;
+    border-radius: 6px;
+    background: #1a1d25;
+    color: #aaa;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+  }
+  .concept-btn:hover { border-color: #3ecf8e; color: #ccc; }
+  .concept-btn.active {
+    border-color: #3ecf8e;
+    background: rgba(62, 207, 142, 0.1);
+    color: #3ecf8e;
+  }
+
+  /* Concept panels */
+  .concept-panel { display: none; }
+  .concept-panel.active { display: block; }
+
+  /* Flow diagram */
+  .flow {
+    background: #1a1d25;
+    border: 1px solid #2a2d35;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .flow-title {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #666;
+    margin-bottom: 1rem;
+  }
+  .flow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    opacity: 0.3;
+    transition: opacity 0.4s, transform 0.3s;
+    transform: translateX(-8px);
+  }
+  .flow-step.visible {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  .flow-step.highlight {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  .step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .step-num.client { background: #2563eb; color: #fff; }
+  .step-num.api { background: #7c3aed; color: #fff; }
+  .step-num.db { background: #3ecf8e; color: #0f1117; }
+  .step-num.auth { background: #f59e0b; color: #0f1117; }
+  .step-content { flex: 1; }
+  .step-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.2rem;
+  }
+  .step-label.client { color: #60a5fa; }
+  .step-label.api { color: #a78bfa; }
+  .step-label.db { color: #3ecf8e; }
+  .step-label.auth { color: #f59e0b; }
+  .step-text {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: #ccc;
+  }
+  .step-detail {
+    margin-top: 0.4rem;
+    font-size: 0.82rem;
+    color: #777;
+    line-height: 1.45;
+  }
+  .arrow-down {
+    margin-left: 13px;
+    padding: 0.15rem 0;
+    color: #333;
+    font-size: 0.9rem;
+    opacity: 0.3;
+    transition: opacity 0.4s;
+  }
+  .arrow-down.visible { opacity: 0.6; }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+  .ctrl-btn {
+    padding: 0.5rem 1.2rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .ctrl-btn.primary {
+    background: #3ecf8e;
+    color: #0f1117;
+    font-weight: 600;
+  }
+  .ctrl-btn.primary:hover { background: #34b87d; }
+  .ctrl-btn.secondary {
+    background: #2a2d35;
+    color: #aaa;
+  }
+  .ctrl-btn.secondary:hover { background: #333640; color: #ccc; }
+  .ctrl-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .step-counter {
+    color: #666;
+    font-size: 0.82rem;
+    margin-left: auto;
+  }
+
+  /* Explanation box */
+  .explanation {
+    background: #1a1d25;
+    border: 1px solid #2a2d35;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .explanation h3 {
+    font-size: 1.05rem;
+    color: #fff;
+    margin-bottom: 0.75rem;
+  }
+  .explanation p {
+    font-size: 0.92rem;
+    line-height: 1.6;
+    color: #aaa;
+    margin-bottom: 0.75rem;
+  }
+  .explanation p:last-child { margin-bottom: 0; }
+
+  code {
+    background: rgba(62, 207, 142, 0.12);
+    color: #3ecf8e;
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    font-size: 0.85em;
+    font-family: 'Consolas', 'Monaco', monospace;
+  }
+  .highlight-orange { color: #f59e0b; }
+  .highlight-green { color: #3ecf8e; }
+  .highlight-blue { color: #60a5fa; }
+  .highlight-purple { color: #a78bfa; }
+
+  /* RLS demo */
+  .rls-demo {
+    background: #1a1d25;
+    border: 1px solid #2a2d35;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .db-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    margin: 1rem 0;
+  }
+  .db-table th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    background: #252830;
+    color: #888;
+    font-weight: 500;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .db-table td {
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid #2a2d35;
+    color: #ccc;
+    transition: all 0.4s;
+  }
+  .db-table tr.dimmed td {
+    opacity: 0.15;
+  }
+  .db-table tr.highlight-row td {
+    background: rgba(62, 207, 142, 0.08);
+  }
+  .user-toggle {
+    display: flex;
+    gap: 0;
+    margin: 1rem 0;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #2a2d35;
+    width: fit-content;
+  }
+  .user-toggle button {
+    padding: 0.5rem 1.2rem;
+    border: none;
+    background: #1a1d25;
+    color: #888;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+  }
+  .user-toggle button.active {
+    background: #3ecf8e;
+    color: #0f1117;
+    font-weight: 600;
+  }
+  .user-toggle button:not(.active):hover {
+    background: #252830;
+    color: #ccc;
+  }
+  .query-box {
+    background: #13151b;
+    border: 1px solid #2a2d35;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.82rem;
+    color: #aaa;
+    margin: 1rem 0;
+    line-height: 1.5;
+    overflow-x: auto;
+  }
+  .query-box .keyword { color: #c084fc; }
+  .query-box .func { color: #f59e0b; }
+  .query-box .comment { color: #555; }
+  .rls-result {
+    font-size: 0.875rem;
+    color: #888;
+    padding: 0.5rem 0;
+  }
+  .rls-result strong { color: #3ecf8e; }
+
+  /* Key insight boxes */
+  .insight {
+    border-left: 3px solid #3ecf8e;
+    padding: 0.75rem 1rem;
+    margin: 1rem 0;
+    background: rgba(62, 207, 142, 0.05);
+    border-radius: 0 6px 6px 0;
+  }
+  .insight p {
+    font-size: 0.9rem;
+    color: #bbb;
+    line-height: 1.55;
+  }
+
+  /* Migration viewer */
+  .migration-viewer {
+    background: #13151b;
+    border: 1px solid #2a2d35;
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 1rem 0;
+  }
+  .migration-header {
+    background: #1a1d25;
+    padding: 0.5rem 1rem;
+    font-size: 0.75rem;
+    color: #666;
+    border-bottom: 1px solid #2a2d35;
+    font-family: 'Consolas', 'Monaco', monospace;
+  }
+  .migration-code {
+    padding: 1rem;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.8rem;
+    line-height: 1.7;
+    overflow-x: auto;
+  }
+  .migration-code .line {
+    transition: all 0.3s;
+    padding: 1px 0.5rem;
+    border-radius: 3px;
+  }
+  .migration-code .line.active {
+    background: rgba(62, 207, 142, 0.1);
+  }
+  .migration-code .sql-keyword { color: #c084fc; }
+  .migration-code .sql-type { color: #60a5fa; }
+  .migration-code .sql-func { color: #f59e0b; }
+  .migration-code .sql-string { color: #3ecf8e; }
+  .migration-code .sql-comment { color: #555; }
+
+  .section-label {
+    display: inline-block;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    margin-bottom: 0.5rem;
+  }
+  .section-label.schema { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
+  .section-label.security { background: rgba(62, 207, 142, 0.15); color: #3ecf8e; }
+  .section-label.policy { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+
+  .anno-text {
+    font-size: 0.85rem;
+    color: #999;
+    line-height: 1.55;
+    padding: 0.5rem 0;
+    min-height: 3.5em;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>How Supabase Auth + RLS Work Together</h1>
+  <p class="subtitle">Three concepts from the supabase-react-crud experiment, explained interactively</p>
+
+  <div class="concepts">
+    <button class="concept-btn active" onclick="showConcept(0)">1. The Request Flow</button>
+    <button class="concept-btn" onclick="showConcept(1)">2. RLS in Action</button>
+    <button class="concept-btn" onclick="showConcept(2)">3. The Migration</button>
+  </div>
+
+  <!-- CONCEPT 1: Request Flow -->
+  <div class="concept-panel active" id="panel-0">
+    <div class="explanation">
+      <h3>Every Supabase request is a four-step chain</h3>
+      <p>When your React app reads or writes data, the request passes through four layers. The key insight: <span class="highlight-green">your database knows who the user is</span> because the JWT travels all the way down to Postgres.</p>
+    </div>
+
+    <div class="controls">
+      <button class="ctrl-btn primary" id="flow-next" onclick="flowNext()">Next step</button>
+      <button class="ctrl-btn secondary" id="flow-reset" onclick="flowReset()" disabled>Reset</button>
+      <span class="step-counter" id="flow-counter">Step 0 / 7</span>
+    </div>
+
+    <div class="flow">
+      <div class="flow-title">Sign in + Fetch notes</div>
+      <div class="flow-steps" id="flow-steps">
+        <div class="flow-step" data-step="1">
+          <div class="step-num auth">1</div>
+          <div class="step-content">
+            <div class="step-label auth">Auth</div>
+            <div class="step-text">User signs in with email + password</div>
+            <div class="step-detail">supabase.auth.signInWithPassword({ email, password })</div>
+          </div>
+        </div>
+        <div class="arrow-down">&#8595;</div>
+        <div class="flow-step" data-step="2">
+          <div class="step-num auth">2</div>
+          <div class="step-content">
+            <div class="step-label auth">Auth service</div>
+            <div class="step-text">Supabase Auth verifies credentials, returns a <span class="highlight-orange">JWT</span></div>
+            <div class="step-detail">The JWT contains the user's UUID. Your app stores it automatically.</div>
+          </div>
+        </div>
+        <div class="arrow-down">&#8595;</div>
+        <div class="flow-step" data-step="3">
+          <div class="step-num client">3</div>
+          <div class="step-content">
+            <div class="step-label client">Client</div>
+            <div class="step-text">App calls <code>supabase.from('notes').select('*')</code></div>
+            <div class="step-detail">The supabase-js client automatically attaches the JWT to the request header.</div>
+          </div>
+        </div>
+        <div class="arrow-down">&#8595;</div>
+        <div class="flow-step" data-step="4">
+          <div class="step-num api">4</div>
+          <div class="step-content">
+            <div class="step-label api">REST API (PostgREST)</div>
+            <div class="step-text">API receives the request, extracts the user ID from the JWT</div>
+            <div class="step-detail">Sets the Postgres session variable so auth.uid() returns this user's ID.</div>
+          </div>
+        </div>
+        <div class="arrow-down">&#8595;</div>
+        <div class="flow-step" data-step="5">
+          <div class="step-num db">5</div>
+          <div class="step-content">
+            <div class="step-label db">Postgres</div>
+            <div class="step-text">Runs <code>SELECT * FROM notes</code> — but RLS policy kicks in</div>
+            <div class="step-detail">Policy says: only return rows WHERE auth.uid() = user_id. Postgres filters before sending results.</div>
+          </div>
+        </div>
+        <div class="arrow-down">&#8595;</div>
+        <div class="flow-step" data-step="6">
+          <div class="step-num api">6</div>
+          <div class="step-content">
+            <div class="step-label api">REST API</div>
+            <div class="step-text">Returns only the rows that passed the RLS check</div>
+            <div class="step-detail">The API doesn't filter — it just forwards what Postgres gave it.</div>
+          </div>
+        </div>
+        <div class="arrow-down">&#8595;</div>
+        <div class="flow-step" data-step="7">
+          <div class="step-num client">7</div>
+          <div class="step-content">
+            <div class="step-label client">Client</div>
+            <div class="step-text">React component receives only this user's notes</div>
+            <div class="step-detail">No client-side filtering needed. The database handled it.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="insight">
+      <p><strong>Key takeaway:</strong> Your React code never filters by user. It just says <code>select('*')</code>. The security lives in Postgres, not in your JavaScript. Even if someone tampered with the client code, they couldn't see other users' data — the database won't return it.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 2: RLS in Action -->
+  <div class="concept-panel" id="panel-1">
+    <div class="explanation">
+      <h3>Row-Level Security filters at the database level</h3>
+      <p>The <code>notes</code> table contains <em>everyone's</em> data. But each user only ever sees their own rows. Toggle between users to see what the same <code>select('*')</code> query returns for each.</p>
+    </div>
+
+    <div class="rls-demo">
+      <div class="flow-title">What's actually in the database</div>
+      <table class="db-table">
+        <thead>
+          <tr>
+            <th>id</th>
+            <th>user_id</th>
+            <th>title</th>
+            <th>body</th>
+          </tr>
+        </thead>
+        <tbody id="rls-table">
+          <tr data-owner="a"><td>a1b2...</td><td class="highlight-blue">user-a-uuid</td><td>First note from User A</td><td>This should only be visible to User A</td></tr>
+          <tr data-owner="a"><td>c3d4...</td><td class="highlight-blue">user-a-uuid</td><td>Second note from User A</td><td>Also private to A</td></tr>
+          <tr data-owner="b"><td>e5f6...</td><td class="highlight-purple">user-b-uuid</td><td>User B's note</td><td>Only B can see this</td></tr>
+        </tbody>
+      </table>
+
+      <div class="flow-title" style="margin-top:1.5rem">Viewing as:</div>
+      <div class="user-toggle">
+        <button class="active" id="toggle-a" onclick="setUser('a')">User A</button>
+        <button id="toggle-b" onclick="setUser('b')">User B</button>
+        <button id="toggle-anon" onclick="setUser('anon')">Not signed in</button>
+      </div>
+
+      <div class="query-box">
+        <span class="comment">-- Your React code runs this:</span><br>
+        <span class="keyword">SELECT</span> * <span class="keyword">FROM</span> notes;<br><br>
+        <span class="comment">-- Postgres silently appends the RLS policy:</span><br>
+        <span class="keyword">SELECT</span> * <span class="keyword">FROM</span> notes <span class="keyword">WHERE</span> <span class="func">auth.uid()</span> = user_id;<br>
+        <span class="comment" id="rls-uid-comment">-- auth.uid() = 'user-a-uuid'</span>
+      </div>
+
+      <div class="rls-result" id="rls-result">
+        <strong>Result:</strong> 2 rows returned (User A's notes only)
+      </div>
+    </div>
+
+    <div class="insight">
+      <p><strong>Key takeaway:</strong> RLS means you write simple queries (<code>select *</code>, <code>insert</code>, <code>delete</code>) and the database enforces the rules. You don't need to remember to add <code>.eq('user_id', currentUser.id)</code> to every query — and more importantly, you <em>can't forget to</em>, because the policy is always active.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 3: The Migration -->
+  <div class="concept-panel" id="panel-2">
+    <div class="explanation">
+      <h3>One SQL file defines your entire backend</h3>
+      <p>The migration file is the source of truth — the table schema, security settings, and access rules. Hover over each section to understand what it does.</p>
+    </div>
+
+    <div class="rls-demo">
+      <div class="migration-viewer">
+        <div class="migration-header">supabase/migrations/00000000000000_create_notes.sql</div>
+        <div class="migration-code" id="migration-code"></div>
+      </div>
+
+      <div id="migration-sections">
+        <div class="migration-section" data-section="schema">
+          <span class="section-label schema">Schema</span>
+          <div class="anno-text" id="anno-text">Hover over the code sections to see what each part does.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="insight">
+      <p><strong>Key takeaway:</strong> This single SQL file replaces what would otherwise be dashboard clicks for creating a table, toggling RLS on, and writing policies. It's version-controlled, reviewable in PRs, and reproducible — run <code>supabase db reset</code> on any machine and you get the same database.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // --- Concept switching ---
+  function showConcept(idx) {
+    document.querySelectorAll('.concept-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
+    document.querySelectorAll('.concept-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
+  }
+
+  // --- Concept 1: Flow animation ---
+  let flowStep = 0;
+  const totalFlowSteps = 7;
+
+  function flowNext() {
+    if (flowStep >= totalFlowSteps) return;
+    flowStep++;
+    updateFlow();
+  }
+
+  function flowReset() {
+    flowStep = 0;
+    updateFlow();
+  }
+
+  function updateFlow() {
+    const steps = document.querySelectorAll('#flow-steps .flow-step');
+    const arrows = document.querySelectorAll('#flow-steps .arrow-down');
+
+    steps.forEach((s, i) => {
+      const stepNum = i + 1;
+      s.classList.toggle('visible', stepNum <= flowStep);
+      s.classList.toggle('highlight', stepNum === flowStep);
+    });
+
+    arrows.forEach((a, i) => {
+      a.classList.toggle('visible', i + 1 < flowStep);
+    });
+
+    document.getElementById('flow-counter').textContent = `Step ${flowStep} / ${totalFlowSteps}`;
+    document.getElementById('flow-next').disabled = flowStep >= totalFlowSteps;
+    document.getElementById('flow-reset').disabled = flowStep === 0;
+  }
+
+  // --- Concept 2: RLS toggle ---
+  function setUser(user) {
+    document.querySelectorAll('.user-toggle button').forEach(b => b.classList.remove('active'));
+    document.getElementById('toggle-' + user).classList.add('active');
+
+    const rows = document.querySelectorAll('#rls-table tr');
+    const comment = document.getElementById('rls-uid-comment');
+    const result = document.getElementById('rls-result');
+
+    if (user === 'a') {
+      rows.forEach(r => {
+        r.classList.toggle('dimmed', r.dataset.owner !== 'a');
+        r.classList.toggle('highlight-row', r.dataset.owner === 'a');
+      });
+      comment.textContent = "-- auth.uid() = 'user-a-uuid'";
+      result.innerHTML = '<strong>Result:</strong> 2 rows returned (User A\'s notes only)';
+    } else if (user === 'b') {
+      rows.forEach(r => {
+        r.classList.toggle('dimmed', r.dataset.owner !== 'b');
+        r.classList.toggle('highlight-row', r.dataset.owner === 'b');
+      });
+      comment.textContent = "-- auth.uid() = 'user-b-uuid'";
+      result.innerHTML = '<strong>Result:</strong> 1 row returned (User B\'s note only)';
+    } else {
+      rows.forEach(r => {
+        r.classList.add('dimmed');
+        r.classList.remove('highlight-row');
+      });
+      comment.textContent = "-- auth.uid() = NULL (no JWT)";
+      result.innerHTML = '<strong>Result:</strong> 0 rows returned (no policy matches anonymous users)';
+    }
+  }
+
+  // --- Concept 3: Migration viewer ---
+  const migrationLines = [
+    { text: '-- Create notes table', cls: 'sql-comment', section: 'schema' },
+    { text: 'create table public.notes (', cls: 'sql-keyword', section: 'schema' },
+    { text: '  id uuid default gen_random_uuid() primary key,', cls: '', section: 'schema' },
+    { text: '  user_id uuid references auth.users(id)', cls: '', section: 'default' },
+    { text: '    on delete cascade not null default auth.uid(),', cls: 'sql-func', section: 'default' },
+    { text: '  title text not null,', cls: '', section: 'schema' },
+    { text: '  body text default \'\',', cls: '', section: 'schema' },
+    { text: '  created_at timestamptz default now() not null', cls: '', section: 'schema' },
+    { text: ');', cls: '', section: 'schema' },
+    { text: '', cls: '', section: null },
+    { text: '-- Enable Row Level Security', cls: 'sql-comment', section: 'rls' },
+    { text: 'alter table public.notes enable row level security;', cls: 'sql-keyword', section: 'rls' },
+    { text: '', cls: '', section: null },
+    { text: '-- Policy: users can only see their own notes', cls: 'sql-comment', section: 'select' },
+    { text: 'create policy "Users can view own notes"', cls: 'sql-string', section: 'select' },
+    { text: '  on public.notes for select', cls: '', section: 'select' },
+    { text: '  using (auth.uid() = user_id);', cls: 'sql-func', section: 'select' },
+    { text: '', cls: '', section: null },
+    { text: '-- Policy: users can insert their own notes', cls: 'sql-comment', section: 'insert' },
+    { text: 'create policy "Users can insert own notes"', cls: 'sql-string', section: 'insert' },
+    { text: '  on public.notes for insert', cls: '', section: 'insert' },
+    { text: '  with check (auth.uid() = user_id);', cls: 'sql-func', section: 'insert' },
+    { text: '', cls: '', section: null },
+    { text: '-- Policy: users can delete their own notes', cls: 'sql-comment', section: 'delete' },
+    { text: 'create policy "Users can delete own notes"', cls: 'sql-string', section: 'delete' },
+    { text: '  on public.notes for delete', cls: '', section: 'delete' },
+    { text: '  using (auth.uid() = user_id);', cls: 'sql-func', section: 'delete' },
+  ];
+
+  const annotations = {
+    schema: '<span class="section-label schema">Schema</span><div class="anno-text">Defines the <code>notes</code> table with five columns. Standard Postgres — UUID primary key, text fields, timestamp. Nothing Supabase-specific here except the <code>auth.users</code> foreign key.</div>',
+    default: '<span class="section-label security">auth.uid() default</span><div class="anno-text">This is the clever part: <code>default auth.uid()</code> means Postgres fills in the user_id automatically from the JWT. Your client code never sends a user ID — it <em>can\'t forge ownership</em>. The insert just sends title and body.</div>',
+    rls: '<span class="section-label security">Enable RLS</span><div class="anno-text">This single line is the on/off switch. Once enabled, <strong>no rows are accessible by default</strong> — you must explicitly create policies to grant access. If you forget a policy, data is hidden, not exposed. Secure by default.</div>',
+    select: '<span class="section-label policy">SELECT policy</span><div class="anno-text">Allows users to read rows where <code>auth.uid() = user_id</code>. The <code>using</code> clause acts as an automatic WHERE filter on every SELECT. Your code says <code>select(\'*\')</code>, Postgres adds the filter invisibly.</div>',
+    insert: '<span class="section-label policy">INSERT policy</span><div class="anno-text">Allows users to insert rows only if the user_id matches their JWT. Since we set <code>default auth.uid()</code>, the database fills this in, and the policy validates it. Belt and suspenders.</div>',
+    delete: '<span class="section-label policy">DELETE policy</span><div class="anno-text">Allows users to delete only their own rows. Even if a malicious client tried to delete another user\'s note by ID, this policy would silently reject it — 0 rows affected, no error.</div>',
+  };
+
+  function renderMigration() {
+    const container = document.getElementById('migration-code');
+    container.innerHTML = migrationLines.map((line, i) => {
+      const section = line.section;
+      return `<div class="line" data-section="${section || ''}" onmouseenter="highlightSection('${section || ''}')" onmouseleave="clearHighlight()">${escapeHtml(line.text) || '&nbsp;'}</div>`;
+    }).join('');
+  }
+
+  function escapeHtml(text) {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function highlightSection(section) {
+    if (!section) return;
+    document.querySelectorAll('#migration-code .line').forEach(line => {
+      line.classList.toggle('active', line.dataset.section === section);
+    });
+    const annoEl = document.getElementById('migration-sections');
+    if (annotations[section]) {
+      annoEl.innerHTML = annotations[section];
+    }
+  }
+
+  function clearHighlight() {
+    document.querySelectorAll('#migration-code .line').forEach(l => l.classList.remove('active'));
+  }
+
+  // Init
+  renderMigration();
+  setUser('a');
+  updateFlow();
+</script>
+</body>
+</html>
