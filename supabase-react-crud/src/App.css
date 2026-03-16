@@ -1,0 +1,148 @@
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.app-header button {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+}
+
+.auth-form {
+  max-width: 320px;
+  margin: 4rem auto;
+}
+
+.auth-form h2 {
+  margin: 0 0 1rem;
+}
+
+.auth-form input {
+  display: block;
+  width: 100%;
+  padding: 0.5rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.auth-form .button-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.auth-form button {
+  flex: 1;
+  padding: 0.5rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  background: #3ecf8e;
+  color: white;
+}
+
+.auth-form button:last-child {
+  background: #555;
+}
+
+.auth-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #e53e3e;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+
+.note-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.note-form input {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.note-form button {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  background: #3ecf8e;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.note-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.note-card {
+  background: white;
+  border: 1px solid #e2e2e2;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.note-card .note-content {
+  text-align: left;
+}
+
+.note-card .note-title {
+  font-weight: 600;
+  margin: 0;
+}
+
+.note-card .note-body {
+  color: #666;
+  font-size: 0.875rem;
+  margin: 0.25rem 0 0;
+}
+
+.note-card button {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #e2e2e2;
+  border-radius: 4px;
+  background: white;
+  color: #e53e3e;
+  cursor: pointer;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+}
+
+.empty {
+  color: #999;
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.user-info {
+  font-size: 0.875rem;
+  color: #666;
+}

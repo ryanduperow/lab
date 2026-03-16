@@ -30,15 +30,3 @@ Open `index.html` in any browser. That's it — no build step, no dependencies.
 - **Arrow Right / D** — Rotate clockwise
 
 **Goal:** Launch from the base, fly to an asteroid, and land on it. Then launch off and fly to another one. Return to base when you're done exploring.
-
-## What you learned
-
-_To be filled in after playing._
-
-## Questions
-
-_To be filled in after playing._
-
-## Gotchas
-
-_To be filled in after playing._

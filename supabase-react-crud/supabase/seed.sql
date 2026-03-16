@@ -1,0 +1,2 @@
+-- Seed data is not used in this experiment.
+-- Notes are created through the UI after authenticating.

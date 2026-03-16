@@ -9,10 +9,6 @@ Collection of small, self-contained working examples. Each subfolder proves one 
   - **Concepts involved** — key ideas, patterns, or technologies the experiment touches
   - **Mental model** — your understanding of how it works *before* building (fill in before you start)
   - **How to run** — exact commands to execute the experiment
-  - **What you learned** — what surprised you, what clicked, what didn't match your mental model (fill in after)
-  - **Questions** — anything that came up during building that you want to revisit
-  - **Gotchas** — non-obvious issues encountered
-- Keep experiments minimal — prove the concept, nothing more
 - No shared dependencies between experiments — each is self-contained
 
 ## Optional Artifacts
