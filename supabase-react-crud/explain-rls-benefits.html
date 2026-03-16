@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Why RLS Matters — With vs Without</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #0f1117;
+    color: #e2e2e2;
+    min-height: 100vh;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+  }
+  h1 { font-size: 1.6rem; font-weight: 600; color: #fff; margin-bottom: 0.5rem; }
+  .subtitle { color: #888; margin-bottom: 2rem; font-size: 0.95rem; }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid #2a2d35;
+    border-radius: 6px;
+    background: #1a1d25;
+    color: #aaa;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+  }
+  .tab-btn:hover { border-color: #3ecf8e; color: #ccc; }
+  .tab-btn.active {
+    border-color: #3ecf8e;
+    background: rgba(62, 207, 142, 0.1);
+    color: #3ecf8e;
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Side by side */
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  @media (max-width: 700px) {
+    .comparison { grid-template-columns: 1fr; }
+  }
+  .side {
+    background: #1a1d25;
+    border: 1px solid #2a2d35;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .side-header {
+    padding: 0.6rem 1rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid #2a2d35;
+  }
+  .side-header.without { background: rgba(239, 68, 68, 0.1); color: #f87171; }
+  .side-header.with { background: rgba(62, 207, 142, 0.1); color: #3ecf8e; }
+  .side-body { padding: 1rem; }
+
+  /* Code blocks */
+  .code {
+    background: #13151b;
+    border: 1px solid #2a2d35;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.78rem;
+    line-height: 1.65;
+    overflow-x: auto;
+    margin: 0.5rem 0;
+  }
+  .code .kw { color: #c084fc; }
+  .code .fn { color: #f59e0b; }
+  .code .str { color: #3ecf8e; }
+  .code .cm { color: #555; }
+  .code .var { color: #60a5fa; }
+  .code .err { color: #f87171; }
+  .code .line { display: block; }
+  .code .line.danger {
+    background: rgba(239, 68, 68, 0.1);
+    margin: 0 -1rem;
+    padding: 0 1rem;
+  }
+  .code .line.safe {
+    background: rgba(62, 207, 142, 0.08);
+    margin: 0 -1rem;
+    padding: 0 1rem;
+  }
+  .code .line.dimmed { opacity: 0.35; }
+
+  .label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0.75rem 0 0.25rem;
+  }
+  .label.muted { color: #555; }
+
+  /* Explanation box */
+  .explanation {
+    background: #1a1d25;
+    border: 1px solid #2a2d35;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .explanation h3 { font-size: 1.05rem; color: #fff; margin-bottom: 0.75rem; }
+  .explanation p {
+    font-size: 0.92rem; line-height: 1.6; color: #aaa; margin-bottom: 0.75rem;
+  }
+  .explanation p:last-child { margin-bottom: 0; }
+
+  .insight {
+    border-left: 3px solid #3ecf8e;
+    padding: 0.75rem 1rem;
+    margin: 1rem 0;
+    background: rgba(62, 207, 142, 0.05);
+    border-radius: 0 6px 6px 0;
+  }
+  .insight p { font-size: 0.9rem; color: #bbb; line-height: 1.55; }
+  .insight.danger {
+    border-left-color: #f87171;
+    background: rgba(239, 68, 68, 0.05);
+  }
+
+  code {
+    background: rgba(62, 207, 142, 0.12);
+    color: #3ecf8e;
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    font-size: 0.85em;
+    font-family: 'Consolas', 'Monaco', monospace;
+  }
+
+  /* Bug simulator */
+  .sim-controls {
+    display: flex;
+    gap: 0.5rem;
+    margin: 1rem 0;
+    flex-wrap: wrap;
+  }
+  .sim-btn {
+    padding: 0.45rem 1rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .sim-btn.primary { background: #3ecf8e; color: #0f1117; font-weight: 600; }
+  .sim-btn.primary:hover { background: #34b87d; }
+  .sim-btn.danger { background: #ef4444; color: #fff; font-weight: 600; }
+  .sim-btn.danger:hover { background: #dc2626; }
+  .sim-btn.secondary { background: #2a2d35; color: #aaa; }
+  .sim-btn.secondary:hover { background: #333640; color: #ccc; }
+
+  .sim-result {
+    background: #13151b;
+    border: 1px solid #2a2d35;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 0.75rem 0;
+    min-height: 80px;
+    transition: all 0.3s;
+  }
+  .sim-result .result-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #555;
+    margin-bottom: 0.5rem;
+  }
+  .sim-result .result-rows {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+  .sim-result .row { padding: 0.15rem 0; }
+  .sim-result .row.leaked {
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.08);
+    padding: 0.15rem 0.5rem;
+    margin: 0 -0.5rem;
+    border-radius: 3px;
+  }
+  .sim-result .row.safe { color: #3ecf8e; }
+  .sim-result .row.blocked { color: #555; }
+
+  /* Checklist */
+  .checklist {
+    list-style: none;
+    padding: 0;
+    margin: 0.75rem 0;
+  }
+  .checklist li {
+    padding: 0.4rem 0;
+    font-size: 0.88rem;
+    color: #aaa;
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    line-height: 1.5;
+  }
+  .checklist .icon { flex-shrink: 0; font-size: 0.9rem; margin-top: 2px; }
+  .checklist .icon.bad { color: #f87171; }
+  .checklist .icon.good { color: #3ecf8e; }
+
+  /* Diagram */
+  .surface-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 1rem 0;
+  }
+  .surface-layer {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    border: 1px solid #2a2d35;
+    border-radius: 6px;
+    margin-bottom: 0.35rem;
+    transition: all 0.3s;
+    cursor: default;
+  }
+  .surface-layer .layer-name {
+    font-size: 0.82rem;
+    color: #aaa;
+    width: 140px;
+    flex-shrink: 0;
+  }
+  .surface-layer .layer-bar {
+    height: 8px;
+    border-radius: 4px;
+    flex: 1;
+    transition: all 0.5s;
+  }
+  .surface-layer .layer-label {
+    font-size: 0.72rem;
+    color: #666;
+    width: 100px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .mode-toggle {
+    display: flex;
+    gap: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #2a2d35;
+    width: fit-content;
+    margin: 1rem 0;
+  }
+  .mode-toggle button {
+    padding: 0.5rem 1.2rem;
+    border: none;
+    background: #1a1d25;
+    color: #888;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+  }
+  .mode-toggle button.active {
+    background: #3ecf8e;
+    color: #0f1117;
+    font-weight: 600;
+  }
+  .mode-toggle button:not(.active):hover {
+    background: #252830;
+    color: #ccc;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Why RLS Matters</h1>
+  <p class="subtitle">The same app, two approaches — and what happens when things go wrong</p>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab(0)">1. Side by Side</button>
+    <button class="tab-btn" onclick="showTab(1)">2. The Forgotten Filter</button>
+    <button class="tab-btn" onclick="showTab(2)">3. Where Security Lives</button>
+    <button class="tab-btn" onclick="showTab(3)">4. The Benefits</button>
+  </div>
+
+  <!-- TAB 1: Side by Side -->
+  <div class="tab-panel active" id="tab-0">
+    <div class="explanation">
+      <h3>The same feature, two ways</h3>
+      <p>Both approaches fetch the current user's notes. Look at what the developer has to remember in each case.</p>
+    </div>
+
+    <p class="label muted">Fetching notes</p>
+    <div class="comparison">
+      <div class="side">
+        <div class="side-header without">Without RLS — traditional approach</div>
+        <div class="side-body">
+          <div class="code">
+            <span class="line"><span class="cm">// Must filter by user on EVERY query</span></span>
+            <span class="line"><span class="kw">const</span> { <span class="var">data</span> } = <span class="kw">await</span> supabase</span>
+            <span class="line">  .<span class="fn">from</span>(<span class="str">'notes'</span>)</span>
+            <span class="line">  .<span class="fn">select</span>(<span class="str">'*'</span>)</span>
+            <span class="line danger">  .<span class="fn">eq</span>(<span class="str">'user_id'</span>, <span class="var">user.id</span>)  <span class="cm">// forget this = data leak</span></span>
+            <span class="line">  .<span class="fn">order</span>(<span class="str">'created_at'</span>)</span>
+          </div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="side-header with">With RLS</div>
+        <div class="side-body">
+          <div class="code">
+            <span class="line"><span class="cm">// Just ask for what you need</span></span>
+            <span class="line"><span class="kw">const</span> { <span class="var">data</span> } = <span class="kw">await</span> supabase</span>
+            <span class="line">  .<span class="fn">from</span>(<span class="str">'notes'</span>)</span>
+            <span class="line">  .<span class="fn">select</span>(<span class="str">'*'</span>)</span>
+            <span class="line safe">  <span class="cm">// database filters automatically</span></span>
+            <span class="line">  .<span class="fn">order</span>(<span class="str">'created_at'</span>)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="label muted">Deleting a note</p>
+    <div class="comparison">
+      <div class="side">
+        <div class="side-header without">Without RLS</div>
+        <div class="side-body">
+          <div class="code">
+            <span class="line"><span class="cm">// Must verify ownership manually</span></span>
+            <span class="line"><span class="kw">const</span> { <span class="var">data</span>: <span class="var">note</span> } = <span class="kw">await</span> supabase</span>
+            <span class="line">  .<span class="fn">from</span>(<span class="str">'notes'</span>)</span>
+            <span class="line">  .<span class="fn">select</span>(<span class="str">'user_id'</span>)</span>
+            <span class="line">  .<span class="fn">eq</span>(<span class="str">'id'</span>, <span class="var">noteId</span>)</span>
+            <span class="line">  .<span class="fn">single</span>()</span>
+            <span class="line"></span>
+            <span class="line danger"><span class="kw">if</span> (<span class="var">note</span>.<span class="var">user_id</span> !== <span class="var">user.id</span>) {</span>
+            <span class="line danger">  <span class="kw">throw new</span> <span class="fn">Error</span>(<span class="str">'Not yours'</span>)</span>
+            <span class="line danger">}</span>
+            <span class="line"></span>
+            <span class="line"><span class="kw">await</span> supabase.<span class="fn">from</span>(<span class="str">'notes'</span>)</span>
+            <span class="line">  .<span class="fn">delete</span>().<span class="fn">eq</span>(<span class="str">'id'</span>, <span class="var">noteId</span>)</span>
+          </div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="side-header with">With RLS</div>
+        <div class="side-body">
+          <div class="code">
+            <span class="line"><span class="cm">// Just delete — policy blocks if not yours</span></span>
+            <span class="line"><span class="kw">await</span> supabase</span>
+            <span class="line">  .<span class="fn">from</span>(<span class="str">'notes'</span>)</span>
+            <span class="line">  .<span class="fn">delete</span>()</span>
+            <span class="line">  .<span class="fn">eq</span>(<span class="str">'id'</span>, <span class="var">noteId</span>)</span>
+            <span class="line safe">  <span class="cm">// policy: auth.uid() = user_id</span></span>
+            <span class="line safe">  <span class="cm">// wrong user? 0 rows affected. silent, safe.</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="label muted">Inserting a note</p>
+    <div class="comparison">
+      <div class="side">
+        <div class="side-header without">Without RLS</div>
+        <div class="side-body">
+          <div class="code">
+            <span class="line"><span class="cm">// Must set user_id from client</span></span>
+            <span class="line"><span class="kw">await</span> supabase.<span class="fn">from</span>(<span class="str">'notes'</span>).<span class="fn">insert</span>({</span>
+            <span class="line">  <span class="var">title</span>,</span>
+            <span class="line">  <span class="var">body</span>,</span>
+            <span class="line danger">  <span class="var">user_id</span>: <span class="var">user.id</span>  <span class="cm">// client controls this!</span></span>
+            <span class="line">})</span>
+          </div>
+          <div class="insight danger" style="margin-top:0.75rem">
+            <p>A malicious client could send <em>any</em> user_id here — inserting notes into another user's account.</p>
+          </div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="side-header with">With RLS</div>
+        <div class="side-body">
+          <div class="code">
+            <span class="line"><span class="cm">// user_id filled by database (default auth.uid())</span></span>
+            <span class="line"><span class="kw">await</span> supabase.<span class="fn">from</span>(<span class="str">'notes'</span>).<span class="fn">insert</span>({</span>
+            <span class="line">  <span class="var">title</span>,</span>
+            <span class="line">  <span class="var">body</span>,</span>
+            <span class="line safe">  <span class="cm">// no user_id — Postgres fills from JWT</span></span>
+            <span class="line">})</span>
+          </div>
+          <div class="insight" style="margin-top:0.75rem">
+            <p>Even if a client sends a fake user_id, the <code>with check</code> policy rejects it — <code>auth.uid()</code> must equal the row's user_id.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 2: The Forgotten Filter -->
+  <div class="tab-panel" id="tab-1">
+    <div class="explanation">
+      <h3>What happens when someone forgets a filter?</h3>
+      <p>In any real project, someone will eventually write a query and forget to filter by user. A new team member, a rushed feature, a refactor that drops a line. Click through to see the consequences in each approach.</p>
+    </div>
+
+    <p class="label muted">Scenario: A developer writes a new "search notes" feature</p>
+    <div class="comparison">
+      <div class="side">
+        <div class="side-header without">Without RLS — the bug</div>
+        <div class="side-body">
+          <div class="code" id="bug-code-without">
+            <span class="line"><span class="cm">// New search feature — developer forgot the filter</span></span>
+            <span class="line"><span class="kw">const</span> { <span class="var">data</span> } = <span class="kw">await</span> supabase</span>
+            <span class="line">  .<span class="fn">from</span>(<span class="str">'notes'</span>)</span>
+            <span class="line">  .<span class="fn">select</span>(<span class="str">'*'</span>)</span>
+            <span class="line">  .<span class="fn">ilike</span>(<span class="str">'title'</span>, <span class="str">`%${query}%`</span>)</span>
+            <span class="line danger">  <span class="cm">// oops — no .eq('user_id', user.id)</span></span>
+          </div>
+          <div class="sim-result" id="result-without">
+            <div class="result-label">API returns:</div>
+            <div class="result-rows" id="rows-without">
+              <div class="row" style="color:#555">Click "Run search" to see results</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="side-header with">With RLS — the same bug</div>
+        <div class="side-body">
+          <div class="code" id="bug-code-with">
+            <span class="line"><span class="cm">// Same code — also "forgot" a filter</span></span>
+            <span class="line"><span class="kw">const</span> { <span class="var">data</span> } = <span class="kw">await</span> supabase</span>
+            <span class="line">  .<span class="fn">from</span>(<span class="str">'notes'</span>)</span>
+            <span class="line">  .<span class="fn">select</span>(<span class="str">'*'</span>)</span>
+            <span class="line">  .<span class="fn">ilike</span>(<span class="str">'title'</span>, <span class="str">`%${query}%`</span>)</span>
+            <span class="line safe">  <span class="cm">// no filter needed — RLS handles it</span></span>
+          </div>
+          <div class="sim-result" id="result-with">
+            <div class="result-label">API returns:</div>
+            <div class="result-rows" id="rows-with">
+              <div class="row" style="color:#555">Click "Run search" to see results</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sim-controls">
+      <button class="sim-btn danger" onclick="runBugSim()">Run search as User A (query: "note")</button>
+      <button class="sim-btn secondary" onclick="resetBugSim()">Reset</button>
+    </div>
+
+    <div id="bug-insight" style="display:none">
+      <div class="insight danger">
+        <p><strong>Without RLS:</strong> User A sees everyone's notes that match the search. This is a data breach. The bug might not be caught in testing if the developer only has one test account.</p>
+      </div>
+      <div class="insight">
+        <p><strong>With RLS:</strong> The exact same "buggy" code is perfectly safe. Postgres appends <code>WHERE auth.uid() = user_id</code> to every query, regardless of what the client sends. The developer can't accidentally expose data because the safety net is in the database, not in their code.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 3: Where Security Lives -->
+  <div class="tab-panel" id="tab-2">
+    <div class="explanation">
+      <h3>Where does the security live?</h3>
+      <p>Without RLS, every place that touches data must enforce access control. With RLS, it's in one place. Toggle to see the difference.</p>
+    </div>
+
+    <div class="mode-toggle">
+      <button class="active" id="mode-without" onclick="setMode('without')">Without RLS</button>
+      <button id="mode-with" onclick="setMode('with')">With RLS</button>
+    </div>
+
+    <div class="surface-diagram" id="surface-diagram">
+      <div class="surface-layer" id="layer-list">
+        <span class="layer-name">List notes query</span>
+        <div class="layer-bar" style="background: #ef4444; width: 100%"></div>
+        <span class="layer-label" id="label-list">must filter</span>
+      </div>
+      <div class="surface-layer" id="layer-search">
+        <span class="layer-name">Search query</span>
+        <div class="layer-bar" style="background: #ef4444; width: 100%"></div>
+        <span class="layer-label" id="label-search">must filter</span>
+      </div>
+      <div class="surface-layer" id="layer-insert">
+        <span class="layer-name">Insert mutation</span>
+        <div class="layer-bar" style="background: #ef4444; width: 100%"></div>
+        <span class="layer-label" id="label-insert">must set user_id</span>
+      </div>
+      <div class="surface-layer" id="layer-delete">
+        <span class="layer-name">Delete mutation</span>
+        <div class="layer-bar" style="background: #ef4444; width: 100%"></div>
+        <span class="layer-label" id="label-delete">must check ownership</span>
+      </div>
+      <div class="surface-layer" id="layer-update">
+        <span class="layer-name">Update mutation</span>
+        <div class="layer-bar" style="background: #ef4444; width: 100%"></div>
+        <span class="layer-label" id="label-update">must check ownership</span>
+      </div>
+      <div class="surface-layer" id="layer-api">
+        <span class="layer-name">API / edge function</span>
+        <div class="layer-bar" style="background: #ef4444; width: 100%"></div>
+        <span class="layer-label" id="label-api">must filter</span>
+      </div>
+      <div class="surface-layer" id="layer-mobile">
+        <span class="layer-name">Mobile app client</span>
+        <div class="layer-bar" style="background: #ef4444; width: 100%"></div>
+        <span class="layer-label" id="label-mobile">must filter</span>
+      </div>
+      <div class="surface-layer" id="layer-db" style="border-color: #2a2d35;">
+        <span class="layer-name">Database (RLS)</span>
+        <div class="layer-bar" id="bar-db" style="background: #333; width: 100%"></div>
+        <span class="layer-label" id="label-db" style="color:#444">inactive</span>
+      </div>
+    </div>
+
+    <div id="surface-insight-without" class="insight danger">
+      <p><strong>7 places</strong> that must correctly enforce access control. Every new feature, every new client, every new query adds another place to get it right. Miss one, and you have a data breach. This is your <em>security surface area</em>.</p>
+    </div>
+    <div id="surface-insight-with" class="insight" style="display:none">
+      <p><strong>1 place.</strong> The database enforces access control for all queries, all clients, all features — current and future. New code is secure by default because the policy applies to every query that hits the table, no matter where it comes from.</p>
+    </div>
+  </div>
+
+  <!-- TAB 4: The Benefits -->
+  <div class="tab-panel" id="tab-3">
+    <div class="explanation">
+      <h3>The four benefits of RLS</h3>
+    </div>
+
+    <div style="background:#1a1d25;border:1px solid #2a2d35;border-radius:10px;padding:1.5rem;margin-bottom:1rem">
+      <h3 style="color:#3ecf8e;font-size:1rem;margin-bottom:0.75rem">1. You can't forget</h3>
+      <p style="color:#aaa;font-size:0.92rem;line-height:1.6">Without RLS, security is opt-in — every query must manually filter. With RLS, security is opt-out — you'd have to explicitly bypass it (which requires the service role key, not the public one). The safe path is the default path.</p>
+    </div>
+
+    <div style="background:#1a1d25;border:1px solid #2a2d35;border-radius:10px;padding:1.5rem;margin-bottom:1rem">
+      <h3 style="color:#3ecf8e;font-size:1rem;margin-bottom:0.75rem">2. Defense in depth</h3>
+      <p style="color:#aaa;font-size:0.92rem;line-height:1.6">Even if your API has a bug, even if someone finds a way to call your REST endpoint directly, even if a developer skips the middleware — the database still enforces the rules. RLS is your last line of defense, and it never sleeps.</p>
+    </div>
+
+    <div style="background:#1a1d25;border:1px solid #2a2d35;border-radius:10px;padding:1.5rem;margin-bottom:1rem">
+      <h3 style="color:#3ecf8e;font-size:1rem;margin-bottom:0.75rem">3. Simpler client code</h3>
+      <p style="color:#aaa;font-size:0.92rem;line-height:1.6">Your queries say what you want, not who's allowed to see it. <code>select('*')</code> instead of <code>select('*').eq('user_id', user.id)</code>. Less boilerplate, fewer bugs, easier to read. The access rules live where they belong — next to the data.</p>
+    </div>
+
+    <div style="background:#1a1d25;border:1px solid #2a2d35;border-radius:10px;padding:1.5rem;margin-bottom:1rem">
+      <h3 style="color:#3ecf8e;font-size:1rem;margin-bottom:0.75rem">4. Works for every access path</h3>
+      <p style="color:#aaa;font-size:0.92rem;line-height:1.6">React web app, mobile app, curl from the terminal, a new microservice you build next year — they all go through Postgres, so they all get the same rules. You define the policy once, and it applies everywhere, automatically.</p>
+    </div>
+
+    <div class="insight">
+      <p><strong>Mental model:</strong> Think of RLS like a bouncer at the database door. Without RLS, every room in your app needs its own bouncer, and you're hiring them manually. With RLS, there's one bouncer at the only entrance, and nobody gets past without showing ID.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Tab switching
+  function showTab(idx) {
+    document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
+    document.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
+  }
+
+  // Bug simulator
+  const allNotes = [
+    { id: 'a1b2', user: 'user-a', title: 'First note from User A', owned: true },
+    { id: 'c3d4', user: 'user-a', title: 'Second note from User A', owned: true },
+    { id: 'e5f6', user: 'user-b', title: "User B's note", owned: false },
+    { id: 'g7h8', user: 'user-c', title: 'Private note from User C', owned: false },
+  ];
+
+  function runBugSim() {
+    const withoutEl = document.getElementById('rows-without');
+    const withEl = document.getElementById('rows-with');
+
+    // Without RLS: returns ALL matching notes
+    withoutEl.innerHTML = allNotes.map(n =>
+      `<div class="row ${n.owned ? 'safe' : 'leaked'}">${n.owned ? '' : '!! '}{id: "${n.id}", user: "${n.user}", title: "${n.title}"}${n.owned ? '' : ' — LEAKED'}</div>`
+    ).join('');
+
+    // With RLS: returns only User A's notes
+    withEl.innerHTML = allNotes.filter(n => n.owned).map(n =>
+      `<div class="row safe">{id: "${n.id}", user: "${n.user}", title: "${n.title}"}</div>`
+    ).join('') + allNotes.filter(n => !n.owned).map(n =>
+      `<div class="row blocked">{id: "${n.id}"} — blocked by RLS (not returned)</div>`
+    ).join('');
+
+    document.getElementById('bug-insight').style.display = 'block';
+  }
+
+  function resetBugSim() {
+    document.getElementById('rows-without').innerHTML = '<div class="row" style="color:#555">Click "Run search" to see results</div>';
+    document.getElementById('rows-with').innerHTML = '<div class="row" style="color:#555">Click "Run search" to see results</div>';
+    document.getElementById('bug-insight').style.display = 'none';
+  }
+
+  // Surface area diagram
+  const layers = ['list', 'search', 'insert', 'delete', 'update', 'api', 'mobile'];
+
+  function setMode(mode) {
+    document.getElementById('mode-without').classList.toggle('active', mode === 'without');
+    document.getElementById('mode-with').classList.toggle('active', mode === 'with');
+
+    document.getElementById('surface-insight-without').style.display = mode === 'without' ? 'block' : 'none';
+    document.getElementById('surface-insight-with').style.display = mode === 'with' ? 'block' : 'none';
+
+    if (mode === 'without') {
+      layers.forEach(l => {
+        const bar = document.querySelector(`#layer-${l} .layer-bar`);
+        const label = document.getElementById(`label-${l}`);
+        bar.style.background = '#ef4444';
+        bar.style.width = '100%';
+        label.style.color = '#f87171';
+        document.getElementById(`layer-${l}`).style.borderColor = '#2a2d35';
+      });
+      document.getElementById('bar-db').style.background = '#333';
+      document.getElementById('label-db').textContent = 'inactive';
+      document.getElementById('label-db').style.color = '#444';
+      document.getElementById('layer-db').style.borderColor = '#2a2d35';
+
+      document.getElementById('label-list').textContent = 'must filter';
+      document.getElementById('label-search').textContent = 'must filter';
+      document.getElementById('label-insert').textContent = 'must set user_id';
+      document.getElementById('label-delete').textContent = 'must check ownership';
+      document.getElementById('label-update').textContent = 'must check ownership';
+      document.getElementById('label-api').textContent = 'must filter';
+      document.getElementById('label-mobile').textContent = 'must filter';
+    } else {
+      layers.forEach(l => {
+        const bar = document.querySelector(`#layer-${l} .layer-bar`);
+        const label = document.getElementById(`label-${l}`);
+        bar.style.background = '#252830';
+        bar.style.width = '100%';
+        label.style.color = '#555';
+        label.textContent = 'no filtering needed';
+        document.getElementById(`layer-${l}`).style.borderColor = '#2a2d35';
+      });
+      document.getElementById('bar-db').style.background = '#3ecf8e';
+      document.getElementById('label-db').textContent = 'enforces all rules';
+      document.getElementById('label-db').style.color = '#3ecf8e';
+      document.getElementById('layer-db').style.borderColor = '#3ecf8e';
+    }
+  }
+</script>
+</body>
+</html>
