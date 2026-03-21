@@ -10,3 +10,4 @@ Inspired by Simon Willison's [hoard things you know how to do](https://simonwill
 |---|---|---|
 | [asteroid-flight-landing](asteroid-flight-landing/) | Thrust-based 2D flight, gravity wells, and landing mechanics in a single HTML file | `canvas`, `physics`, `game-loop`, `collision` |
 | [supabase-react-crud](supabase-react-crud/) | Code-first Supabase: auth, CRUD, and Row-Level Security with React + Vite, all defined in SQL migrations | `supabase`, `react`, `vite`, `postgres`, `rls`, `auth` |
+| [mcp-ynab-server](mcp-ynab-server/) | MCP server connecting AI assistants to YNAB — tools, resources, and prompts wrapping a real API | `mcp`, `typescript`, `ynab`, `api`, `stdio` |

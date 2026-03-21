@@ -25,3 +25,4 @@ Thumbs.db
 
 # Claude Code (project-local settings are gitignored)
 .claude/
+.mcp.json

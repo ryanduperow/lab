@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCP Runtime Flow — Visual Explainer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #141420;
+      --surface-2: #1a1a2e;
+      --text: #e0e0e8;
+      --text-muted: #8888a0;
+      --hint: #666680;
+      --border: #2a2a3e;
+      --accent: #06b6d4;
+      --claude-color: #3b82f6;
+      --server-color: #10b981;
+      --ynab-color: #f59e0b;
+      --font-heading: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+      --font-body: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      --font-code: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--text);
+      background: var(--bg);
+      padding: 32px 24px;
+    }
+
+    .container { max-width: 1100px; margin: 0 auto; }
+
+    header { text-align: center; margin-bottom: 40px; }
+    header h1 {
+      font-family: var(--font-heading);
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    header .subtitle {
+      font-size: 15px;
+      color: var(--text-muted);
+    }
+    header .subtitle span {
+      color: var(--accent);
+      font-family: var(--font-code);
+      font-size: 13px;
+    }
+
+    /* ── System Map ── */
+    .system-map {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      margin-bottom: 32px;
+      padding: 24px 0;
+    }
+
+    .zone {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 20px 28px;
+      border-radius: 12px;
+      border: 2px solid var(--border);
+      background: var(--surface);
+      transition: all 0.4s ease;
+      min-width: 170px;
+      position: relative;
+    }
+    .zone.active {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .zone-claude.active {
+      border-color: var(--claude-color);
+      background: color-mix(in srgb, var(--claude-color) 8%, var(--surface));
+      box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
+    }
+    .zone-server.active {
+      border-color: var(--server-color);
+      background: color-mix(in srgb, var(--server-color) 8%, var(--surface));
+      box-shadow: 0 8px 24px rgba(16, 185, 129, 0.15);
+    }
+    .zone-ynab.active {
+      border-color: var(--ynab-color);
+      background: color-mix(in srgb, var(--ynab-color) 8%, var(--surface));
+      box-shadow: 0 8px 24px rgba(245, 158, 11, 0.15);
+    }
+
+    .zone-icon { font-size: 28px; }
+    .zone-label {
+      font-family: var(--font-heading);
+      font-weight: 600;
+      font-size: 15px;
+    }
+    .zone-sublabel {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* ── Connections ── */
+    .connection {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 0 8px;
+      position: relative;
+      width: 130px;
+    }
+    .conn-label {
+      font-family: var(--font-code);
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+    }
+    .conn-track {
+      width: 100%;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      position: relative;
+      overflow: hidden;
+    }
+    .conn-flow {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      width: 40%;
+      border-radius: 2px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .conn-flow.active {
+      opacity: 1;
+    }
+    .conn-flow.flow-right {
+      animation: flowRight 1s ease-in-out infinite;
+    }
+    .conn-flow.flow-left {
+      animation: flowLeft 1s ease-in-out infinite;
+    }
+    .connection.stdio .conn-flow { background: var(--claude-color); }
+    .connection.https .conn-flow { background: var(--ynab-color); }
+
+    @keyframes flowRight {
+      0% { left: -40%; }
+      100% { left: 100%; }
+    }
+    @keyframes flowLeft {
+      0% { left: 100%; }
+      100% { left: -40%; }
+    }
+
+    /* ── Step Detail Card ── */
+    .step-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin-bottom: 24px;
+      min-height: 260px;
+      transition: border-color 0.4s ease;
+    }
+    .step-card.claude-step { border-color: color-mix(in srgb, var(--claude-color) 40%, var(--border)); }
+    .step-card.server-step { border-color: color-mix(in srgb, var(--server-color) 40%, var(--border)); }
+    .step-card.ynab-step { border-color: color-mix(in srgb, var(--ynab-color) 40%, var(--border)); }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+    .step-number {
+      font-family: var(--font-heading);
+      font-size: 13px;
+      font-weight: 600;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+    .claude-step .step-number {
+      background: color-mix(in srgb, var(--claude-color) 20%, var(--surface));
+      color: var(--claude-color);
+    }
+    .server-step .step-number {
+      background: color-mix(in srgb, var(--server-color) 20%, var(--surface));
+      color: var(--server-color);
+    }
+    .ynab-step .step-number {
+      background: color-mix(in srgb, var(--ynab-color) 20%, var(--surface));
+      color: var(--ynab-color);
+    }
+
+    .step-title {
+      font-family: var(--font-heading);
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .step-location {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: var(--font-code);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .step-description {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-bottom: 16px;
+      line-height: 1.7;
+    }
+
+    .data-block {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .data-label {
+      font-family: var(--font-code);
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+    .data-content {
+      padding: 14px 16px;
+      font-family: var(--font-code);
+      font-size: 13px;
+      line-height: 1.7;
+      white-space: pre;
+      overflow-x: auto;
+      color: var(--text);
+    }
+    .data-content .key { color: #7dd3fc; }
+    .data-content .str { color: #86efac; }
+    .data-content .num { color: #fcd34d; }
+    .data-content .comment { color: var(--hint); font-style: italic; }
+    .data-content .highlight { color: var(--accent); font-weight: 500; }
+    .data-content .muted { color: var(--text-muted); }
+
+    /* ── Navigation ── */
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+    }
+    .nav-btn {
+      font-family: var(--font-heading);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 20px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      min-width: 90px;
+    }
+    .nav-btn:hover:not(:disabled) {
+      background: var(--surface-2);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .nav-btn:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+
+    .step-dots {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      padding: 0;
+    }
+    .dot:hover { border-color: var(--text-muted); }
+    .dot.active {
+      border-color: var(--accent);
+      background: var(--accent);
+      transform: scale(1.2);
+    }
+    .dot.visited {
+      border-color: var(--text-muted);
+      background: var(--text-muted);
+    }
+
+    .hint {
+      font-style: italic;
+      font-size: 10px;
+      color: var(--hint);
+      text-align: center;
+      margin-top: 12px;
+      opacity: 1;
+      transition: opacity 0.6s ease;
+    }
+    .hint.faded { opacity: 0; }
+
+    /* ── Flow direction arrow ── */
+    .flow-arrow {
+      text-align: center;
+      margin-bottom: 20px;
+      font-family: var(--font-code);
+      font-size: 12px;
+      color: var(--text-muted);
+      height: 22px;
+      transition: opacity 0.3s ease;
+    }
+    .flow-arrow .arrow-icon {
+      display: inline-block;
+      color: var(--accent);
+      font-size: 14px;
+      margin: 0 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>MCP Runtime Flow</h1>
+      <p class="subtitle">What happens when you ask <span>"How's my budget?"</span></p>
+    </header>
+
+    <div class="system-map">
+      <div class="zone zone-claude" id="zone-claude">
+        <div class="zone-icon">💻</div>
+        <div class="zone-label">Claude Code</div>
+        <div class="zone-sublabel">Client</div>
+      </div>
+
+      <div class="connection stdio">
+        <div class="conn-label">stdin / stdout</div>
+        <div class="conn-track">
+          <div class="conn-flow" id="flow-stdio"></div>
+        </div>
+      </div>
+
+      <div class="zone zone-server" id="zone-server">
+        <div class="zone-icon">⚙</div>
+        <div class="zone-label">MCP Server</div>
+        <div class="zone-sublabel">Node.js process</div>
+      </div>
+
+      <div class="connection https">
+        <div class="conn-label">HTTPS</div>
+        <div class="conn-track">
+          <div class="conn-flow" id="flow-https"></div>
+        </div>
+      </div>
+
+      <div class="zone zone-ynab" id="zone-ynab">
+        <div class="zone-icon">💰</div>
+        <div class="zone-label">YNAB API</div>
+        <div class="zone-sublabel">External service</div>
+      </div>
+    </div>
+
+    <div class="flow-arrow" id="flow-arrow"></div>
+
+    <div class="step-card" id="step-card">
+      <div class="step-header">
+        <div class="step-number" id="step-number">1</div>
+        <h2 class="step-title" id="step-title"></h2>
+        <div class="step-location" id="step-location"></div>
+      </div>
+      <p class="step-description" id="step-description"></p>
+      <div class="data-block">
+        <div class="data-label" id="data-label"></div>
+        <div class="data-content" id="data-content"></div>
+      </div>
+    </div>
+
+    <div class="nav">
+      <button class="nav-btn" id="prev-btn" disabled>← Prev</button>
+      <div class="step-dots" id="step-dots"></div>
+      <button class="nav-btn" id="next-btn">Next →</button>
+    </div>
+
+    <div class="hint" id="hint">Click dots or use arrow keys to navigate</div>
+  </div>
+
+  <script>
+    const steps = [
+      {
+        title: "User Prompt",
+        location: "Terminal",
+        zone: "claude",
+        activeZones: ["claude"],
+        flow: null,
+        arrow: null,
+        dataLabel: "User input",
+        description: "You type a natural language question into Claude Code. The LLM hasn't been invoked yet — this is just text entering the system.",
+        data: '<span class="str">"How\'s my budget?"</span>'
+      },
+      {
+        title: "LLM Selects Tool",
+        location: "Claude Code",
+        zone: "claude",
+        activeZones: ["claude"],
+        flow: null,
+        arrow: "Claude sees get_budget_summary in the MCP tool list →",
+        dataLabel: "Tool selection",
+        description: "Claude analyzes the prompt against available MCP tools. It matches the intent to get_budget_summary and decides no arguments are needed — the month parameter is optional and defaults to the current month.",
+        data: '<span class="comment">// Available tools from MCP server:</span>\n<span class="comment">// - get_budget_summary</span>\n<span class="comment">// - get_category_balances</span>\n<span class="comment">// - search_transactions</span>\n<span class="comment">// - move_money</span>\n\n<span class="highlight">Selected: get_budget_summary</span>\n<span class="muted">Arguments: {} (month defaults to current)</span>'
+      },
+      {
+        title: "JSON-RPC Request Serialized",
+        location: "MCP Client",
+        zone: "claude",
+        activeZones: ["claude"],
+        flow: null,
+        arrow: "Tool call → JSON-RPC 2.0 envelope →",
+        dataLabel: "JSON-RPC request",
+        description: "The MCP client inside Claude Code wraps the tool call in a JSON-RPC 2.0 message. This is the protocol boundary — natural language intent is now a structured protocol message with an ID for matching the response.",
+        data: '{\n  <span class="key">"jsonrpc"</span>: <span class="str">"2.0"</span>,\n  <span class="key">"method"</span>: <span class="str">"tools/call"</span>,\n  <span class="key">"params"</span>: {\n    <span class="key">"name"</span>: <span class="str">"get_budget_summary"</span>,\n    <span class="key">"arguments"</span>: {}\n  },\n  <span class="key">"id"</span>: <span class="num">1</span>\n}'
+      },
+      {
+        title: "Sent via stdin",
+        location: "stdio transport",
+        zone: "claude",
+        activeZones: ["claude", "server"],
+        flow: { id: "stdio", direction: "right" },
+        arrow: "Claude Code → stdin pipe → MCP Server process",
+        dataLabel: "Pipe transport",
+        description: "The JSON-RPC message is written as a single line to the server process's stdin pipe. This is the transport layer — Claude Code spawned the Node.js process at startup and communicates through OS-level pipes. No network involved.",
+        data: '<span class="muted">// Written to stdin as newline-delimited JSON:</span>\n<span class="highlight">process.stdin →</span> <span class="str">{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_budget_summary","arguments":{}},"id":1}</span><span class="highlight">\\n</span>'
+      },
+      {
+        title: "Zod Validates Input",
+        location: "src/index.ts",
+        zone: "server",
+        activeZones: ["server"],
+        flow: null,
+        arrow: null,
+        dataLabel: "Schema validation",
+        description: "The MCP SDK deserializes the JSON-RPC message and routes it to the registered tool handler. Before the handler runs, Zod validates the input against the declared schema. Here, month is optional — undefined passes validation and the handler defaults to the current month.",
+        data: '<span class="comment">// Registered schema:</span>\n{\n  <span class="key">month</span>: z.string().optional()\n}\n\n<span class="comment">// Input received:</span>\n{}\n\n<span class="comment">// Validation result:</span>\n<span class="highlight">✓ Valid</span> → { <span class="key">month</span>: <span class="muted">undefined</span> }\n<span class="muted">→ Handler defaults to getCurrentMonth() → "2026-03-01"</span>'
+      },
+      {
+        title: "YNAB API Request",
+        location: "src/index.ts",
+        zone: "server",
+        activeZones: ["server", "ynab"],
+        flow: { id: "https", direction: "right" },
+        arrow: "MCP Server → HTTPS → api.ynab.com",
+        dataLabel: "HTTP request",
+        description: "The tool handler calls the YNAB SDK, which makes an HTTPS request to the YNAB REST API. The personal access token is sent as a Bearer token. \"last-used\" resolves to the user's most recently accessed budget.",
+        data: '<span class="highlight">GET</span> <span class="str">https://api.ynab.com/v1/budgets/last-used/months/2026-03-01</span>\n\n<span class="key">Authorization</span>: Bearer 5MNO_i2H...DgU\n<span class="key">Accept</span>: application/json'
+      },
+      {
+        title: "YNAB Responds",
+        location: "api.ynab.com",
+        zone: "ynab",
+        activeZones: ["server", "ynab"],
+        flow: { id: "https", direction: "left" },
+        arrow: "YNAB API → HTTPS → MCP Server",
+        dataLabel: "API response (raw)",
+        description: "YNAB returns the budget month data. All currency amounts are in milliunits — thousandths of a dollar. This avoids floating-point precision issues but means every amount needs conversion before display.",
+        data: '{\n  <span class="key">"data"</span>: {\n    <span class="key">"month"</span>: {\n      <span class="key">"income"</span>: <span class="num">3906180</span>,      <span class="comment">// not dollars!</span>\n      <span class="key">"budgeted"</span>: <span class="num">6834500</span>,\n      <span class="key">"activity"</span>: <span class="num">-5614980</span>,\n      <span class="key">"to_be_budgeted"</span>: <span class="num">0</span>,\n      <span class="key">"age_of_money"</span>: <span class="num">18</span>,\n      <span class="key">"categories"</span>: [ <span class="muted">...62 categories...</span> ]\n    }\n  }\n}'
+      },
+      {
+        title: "Server Formats Response",
+        location: "src/index.ts",
+        zone: "server",
+        activeZones: ["server"],
+        flow: null,
+        arrow: null,
+        dataLabel: "Data transformation",
+        description: "The tool handler transforms YNAB's raw response into a human-readable format. Milliunits become dollar strings, hidden/deleted categories are filtered out, and overspent categories are flagged. The result is wrapped in the MCP content format.",
+        data: '<span class="comment">// Milliunit conversion:</span>\n<span class="num">3906180</span> / <span class="num">1000</span> → <span class="str">"$3906.18"</span>\n<span class="num">-5614980</span> / <span class="num">1000</span> → <span class="str">"$-5614.98"</span>\n\n<span class="comment">// Wrapped in MCP tool result:</span>\n{\n  <span class="key">content</span>: [{\n    <span class="key">type</span>: <span class="str">"text"</span>,\n    <span class="key">text</span>: <span class="str">\'{"month":"2026-03-01","income":"$3906.18",...}\'</span>\n  }]\n}'
+      },
+      {
+        title: "JSON-RPC Response via stdout",
+        location: "stdio transport",
+        zone: "server",
+        activeZones: ["claude", "server"],
+        flow: { id: "stdio", direction: "left" },
+        arrow: "MCP Server → stdout pipe → Claude Code",
+        dataLabel: "JSON-RPC response",
+        description: "The MCP SDK wraps the tool result in a JSON-RPC response with the matching ID and writes it to stdout. This is why console.log() is forbidden — any stray output here would corrupt the protocol stream.",
+        data: '{\n  <span class="key">"jsonrpc"</span>: <span class="str">"2.0"</span>,\n  <span class="key">"result"</span>: {\n    <span class="key">"content"</span>: [{\n      <span class="key">"type"</span>: <span class="str">"text"</span>,\n      <span class="key">"text"</span>: <span class="str">"{\\"month\\":\\"2026-03-01\\",\\"income\\":\\"$3906.18\\",...}"</span>\n    }]\n  },\n  <span class="key">"id"</span>: <span class="num">1</span>   <span class="comment">// ← matches request ID</span>\n}\n\n<span class="comment">// ⚠ console.log() would inject text here and break the stream</span>\n<span class="comment">// ✓ console.error() writes to stderr instead (safe)</span>'
+      },
+      {
+        title: "User Sees the Answer",
+        location: "Terminal",
+        zone: "claude",
+        activeZones: ["claude"],
+        flow: null,
+        arrow: null,
+        dataLabel: "Final output",
+        description: "The MCP client deserializes the JSON-RPC response and feeds the tool result back to Claude. Claude synthesizes a natural language summary from the structured data — the full round trip from question to answer is complete.",
+        data: '<span class="highlight">Your March budget:</span>\n\n  Income:   <span class="str">$3,906.18</span>\n  Spending: <span class="str">$5,614.98</span>\n  Budgeted: <span class="str">$6,834.50</span> <span class="muted">(drawing from prior savings)</span>\n\n  To be budgeted: <span class="str">$0.00</span> <span class="muted">(fully assigned)</span>\n  Age of money:   <span class="num">18 days</span>\n\n  <span class="highlight">No overspent categories.</span>'
+      }
+    ];
+
+    let current = 0;
+    let hintDismissed = false;
+
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const dotsContainer = document.getElementById('step-dots');
+    const hint = document.getElementById('hint');
+
+    // Build dots
+    steps.forEach((_, i) => {
+      const dot = document.createElement('button');
+      dot.className = 'dot';
+      dot.addEventListener('click', () => goTo(i));
+      dotsContainer.appendChild(dot);
+    });
+
+    function goTo(index) {
+      if (index < 0 || index >= steps.length) return;
+      current = index;
+      render();
+      if (!hintDismissed) {
+        hintDismissed = true;
+        hint.classList.add('faded');
+      }
+    }
+
+    function render() {
+      const step = steps[current];
+
+      // Update zones
+      document.querySelectorAll('.zone').forEach(z => z.classList.remove('active'));
+      step.activeZones.forEach(z => {
+        document.getElementById('zone-' + z)?.classList.add('active');
+      });
+
+      // Update connection flows
+      const stdioFlow = document.getElementById('flow-stdio');
+      const httpsFlow = document.getElementById('flow-https');
+      stdioFlow.className = 'conn-flow';
+      httpsFlow.className = 'conn-flow';
+      if (step.flow) {
+        const el = step.flow.id === 'stdio' ? stdioFlow : httpsFlow;
+        el.classList.add('active', step.flow.direction === 'right' ? 'flow-right' : 'flow-left');
+      }
+
+      // Update flow arrow
+      const flowArrow = document.getElementById('flow-arrow');
+      flowArrow.innerHTML = step.arrow
+        ? `<span class="arrow-icon">→</span> ${step.arrow}`
+        : '';
+
+      // Update step card
+      const card = document.getElementById('step-card');
+      card.className = 'step-card ' + step.zone + '-step';
+      document.getElementById('step-number').textContent = current + 1;
+      document.getElementById('step-title').textContent = step.title;
+      document.getElementById('step-location').textContent = step.location;
+      document.getElementById('step-description').textContent = step.description;
+      document.getElementById('data-label').textContent = step.dataLabel;
+      document.getElementById('data-content').innerHTML = step.data;
+
+      // Update dots
+      document.querySelectorAll('.dot').forEach((dot, i) => {
+        dot.className = 'dot';
+        if (i === current) dot.classList.add('active');
+        else if (i < current) dot.classList.add('visited');
+      });
+
+      // Update buttons
+      prevBtn.disabled = current === 0;
+      nextBtn.disabled = current === steps.length - 1;
+    }
+
+    prevBtn.addEventListener('click', () => goTo(current - 1));
+    nextBtn.addEventListener('click', () => goTo(current + 1));
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') goTo(current - 1);
+      if (e.key === 'ArrowRight') goTo(current + 1);
+    });
+
+    render();
+  </script>
+</body>
+</html>
