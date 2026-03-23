@@ -1,0 +1,22 @@
+{
+  "meals": [
+    {
+      "label": "breakfast",
+      "name": "Scrambled Eggs with Spinach and Cheese",
+      "ingredients": ["eggs", "spinach", "cheese", "butter", "salt", "pepper"],
+      "briefDescription": "Fluffy scrambled eggs folded with wilted spinach and melted cheese."
+    },
+    {
+      "label": "lunch",
+      "name": "Chicken Stir-Fry with Rice",
+      "ingredients": ["chicken breast", "rice", "broccoli", "bell pepper", "soy sauce", "garlic", "olive oil"],
+      "briefDescription": "Sliced chicken breast stir-fried with broccoli and bell pepper, served over steamed rice."
+    },
+    {
+      "label": "dinner",
+      "name": "Beef and Bean Burritos",
+      "ingredients": ["ground beef", "black beans", "tortillas", "cheese", "onion", "tomato sauce"],
+      "briefDescription": "Seasoned ground beef and black beans wrapped in warm tortillas with cheese and sauce."
+    }
+  ]
+}

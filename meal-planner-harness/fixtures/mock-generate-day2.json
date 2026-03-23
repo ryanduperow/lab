@@ -1,0 +1,22 @@
+{
+  "meals": [
+    {
+      "label": "breakfast",
+      "name": "Garlic Toast with Fried Eggs",
+      "ingredients": ["bread", "eggs", "garlic", "butter", "olive oil"],
+      "briefDescription": "Crispy garlic-rubbed toast topped with sunny-side-up eggs."
+    },
+    {
+      "label": "lunch",
+      "name": "Black Bean and Rice Bowl",
+      "ingredients": ["black beans", "rice", "bell pepper", "onion", "tomato sauce", "cheese"],
+      "briefDescription": "Hearty bowl of seasoned black beans over rice with peppers and melted cheese."
+    },
+    {
+      "label": "dinner",
+      "name": "Pasta Bolognese",
+      "ingredients": ["pasta", "ground beef", "tomato sauce", "onion", "garlic", "olive oil"],
+      "briefDescription": "Classic meat sauce simmered with tomatoes and garlic, tossed with pasta."
+    }
+  ]
+}

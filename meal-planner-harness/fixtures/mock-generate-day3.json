@@ -1,0 +1,22 @@
+{
+  "meals": [
+    {
+      "label": "breakfast",
+      "name": "Veggie Omelette",
+      "ingredients": ["eggs", "bell pepper", "onion", "spinach", "cheese", "butter"],
+      "briefDescription": "Three-egg omelette stuffed with sauteed peppers, onions, and spinach."
+    },
+    {
+      "label": "lunch",
+      "name": "Chicken and Broccoli Rice Casserole",
+      "ingredients": ["chicken breast", "broccoli", "rice", "cheese", "butter", "garlic"],
+      "briefDescription": "Baked casserole layering chicken, broccoli, and rice under a cheesy topping."
+    },
+    {
+      "label": "dinner",
+      "name": "Bean and Cheese Quesadillas",
+      "ingredients": ["black beans", "tortillas", "cheese", "bell pepper", "onion", "olive oil"],
+      "briefDescription": "Crispy tortillas filled with mashed black beans, cheese, and diced peppers."
+    }
+  ]
+}

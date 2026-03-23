@@ -1,0 +1,16 @@
+{
+  "pantryItems": [
+    { "name": "chicken breast", "quantity": "1 lb" },
+    { "name": "rice", "quantity": "2 cups" },
+    { "name": "eggs", "quantity": "6" },
+    { "name": "onion", "quantity": "1" },
+    { "name": "garlic", "quantity": "3 cloves" },
+    { "name": "olive oil", "quantity": "1 bottle" },
+    { "name": "tortillas", "quantity": "4" },
+    { "name": "cheese", "quantity": "4 oz" }
+  ],
+  "dietaryPreferences": [],
+  "days": 5,
+  "mealsPerDay": 2,
+  "mealLabels": ["lunch", "dinner"]
+}

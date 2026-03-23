@@ -1,0 +1,18 @@
+{
+  "name": "meal-planner-harness",
+  "version": "1.0.0",
+  "description": "Deterministic harness wrapping LLM calls for multi-phase meal planning",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dry-run": "node dist/index.js --dry-run --input fixtures/mock-input.json",
+    "sample": "node dist/index.js --input fixtures/sample-input.json", 
+    "sparse-sample": "node dist/index.js --input fixtures/sparse-pantry.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "ingredients": [
+    { "name": "chicken breast", "quantity": "2 lbs", "category": "protein" },
+    { "name": "ground beef", "quantity": "1 lb", "category": "protein" },
+    { "name": "rice", "quantity": "3 cups", "category": "grain" },
+    { "name": "pasta", "quantity": "1 box", "category": "grain" },
+    { "name": "eggs", "quantity": "1 dozen", "category": "protein" },
+    { "name": "broccoli", "quantity": "2 heads", "category": "vegetable" },
+    { "name": "spinach", "quantity": "1 bag", "category": "vegetable" },
+    { "name": "bell pepper", "quantity": "3", "category": "vegetable" },
+    { "name": "onion", "quantity": "2", "category": "vegetable" },
+    { "name": "garlic", "quantity": "1 head", "category": "spice" },
+    { "name": "tomato sauce", "quantity": "2 cans", "category": "condiment" },
+    { "name": "olive oil", "quantity": "1 bottle", "category": "fat" },
+    { "name": "soy sauce", "quantity": "1 bottle", "category": "condiment" },
+    { "name": "cheese", "quantity": "8 oz block", "category": "dairy" },
+    { "name": "butter", "quantity": "1 stick", "category": "dairy" },
+    { "name": "bread", "quantity": "1 loaf", "category": "grain" },
+    { "name": "black beans", "quantity": "2 cans", "category": "protein" },
+    { "name": "tortillas", "quantity": "1 pack", "category": "grain" }
+  ]
+}
